@@ -1,0 +1,20 @@
+# 复制为 config.toml 后生效；所有阈值可配，不写死代码。
+# 命令行 --db 参数优先级最高。
+
+[knowbot]
+# 数据库路径（建议在仓库根目录运行 daemon，保持相对路径稳定）
+db_path = "./data/knowbot.db"
+
+# 心跳周期（秒）：存活证明 + 事件缺口探测
+heartbeat_period = 60.0
+
+# 事件总线容量：满即丢弃并计数，绝不反压（阻塞 COM 回调会拖死系统音频通知）
+queue_size = 10000
+
+# 落库批量：条数阈值或时间阈值先到先触发
+batch_size = 200
+flush_interval = 0.5
+
+# 传感器开关（缺依赖/失败时自动降级为 unavailable 事件，不拖垮 daemon）
+enable_audio = true
+enable_winmsg = true
