@@ -18,3 +18,23 @@ flush_interval = 0.5
 # 传感器开关（缺依赖/失败时自动降级为 unavailable 事件，不拖垮 daemon）
 enable_audio = true
 enable_winmsg = true
+
+# 聚合层（A3）：把传感器爆发折叠成语义事件（audio.flow 命名空间）
+# churn_flips/co_devices 双阈值：单设备翻转多，或多端点协同翻转，都判不稳定
+enable_aggregation = true
+agg_settle_s = 2.0
+agg_churn_flips = 3
+agg_co_window_s = 3.0
+agg_co_devices = 2
+agg_max_span_s = 60.0
+agg_tick_interval = 0.5
+
+# Phase 1 ①：音量观察（IAudioEndpointVolumeCallback，含 actor=user/agent 区分）
+enable_volume_watch = true
+vol_settle_s = 1.5
+
+# pre-arm：默认输出切走时，趁休眠端点把音量预埋到安全值（只降不升）。
+# 默认关——真机插拔验证后再开。
+enable_prearm = false
+prearm_safe_scalar = 0.2
+prearm_only_lower = true

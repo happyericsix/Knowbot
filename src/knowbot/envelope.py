@@ -29,6 +29,8 @@ class Sensor:
     SESSION = "system.session"
     AUDIO = "audio.device"
     FOREGROUND = "app.foreground"
+    USB = "device.usb"
+    VOLUME = "audio.volume"
 
 
 def now_wall() -> str:

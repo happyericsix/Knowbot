@@ -12,6 +12,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
+import re
 import threading
 import time
 from ctypes import wintypes
@@ -24,8 +25,18 @@ log = logging.getLogger(__name__)
 
 WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
+WM_QUERYENDSESSION = 0x0011
+WM_ENDSESSION = 0x0016
 WM_POWERBROADCAST = 0x0218
+WM_DEVICECHANGE = 0x0219
 WM_WTSSESSION_CHANGE = 0x02B1
+
+DBT_DEVICEARRIVAL = 0x8000
+DBT_DEVICEREMOVECOMPLETE = 0x8004
+DBT_DEVTYP_DEVICEINTERFACE = 0x0005
+DEVICE_NOTIFY_WINDOW_HANDLE = 0
+# USB 设备接口类：注册后插拔会带 VID/PID 的接口路径到达本窗口
+GUID_DEVINTERFACE_USB_DEVICE = "{A5DCBF10-6530-11D2-901F-00C04FB951ED}"
 
 PBT_APMSUSPEND = 0x0004
 PBT_APMRESUMESUSPEND = 0x0007
@@ -68,6 +79,10 @@ _kernel32.OpenProcess.restype = wintypes.HANDLE
 _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 _kernel32.QueryFullProcessImageNameW.argtypes = [
     wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+_user32.RegisterDeviceNotificationW.restype = wintypes.HANDLE
+_user32.RegisterDeviceNotificationW.argtypes = [
+    wintypes.HWND, ctypes.c_void_p, wintypes.DWORD]
+_user32.UnregisterDeviceNotification.argtypes = [wintypes.HANDLE]
 
 
 class _WNDCLASSW(ctypes.Structure):
@@ -87,6 +102,44 @@ class _WNDCLASSW(ctypes.Structure):
     ]
 
 
+class _GUID(ctypes.Structure):
+    _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+
+class _DEV_BROADCAST_HDR(ctypes.Structure):
+    _fields_ = [("dbch_size", wintypes.DWORD), ("dbch_devicetype", wintypes.DWORD),
+                ("dbch_reserved", wintypes.DWORD)]
+
+
+class _DEV_BROADCAST_DEVICEINTERFACE_W(ctypes.Structure):
+    # dbcc_name 变长；接口路径从偏移 28 处按宽字符串读取
+    _fields_ = [("dbcc_size", wintypes.DWORD), ("dbcc_devicetype", wintypes.DWORD),
+                ("dbcc_reserved", wintypes.DWORD), ("dbcc_classguid", _GUID),
+                ("dbcc_name", wintypes.WCHAR * 1)]
+
+
+def _guid_from_str(s: str) -> _GUID:
+    h = s.strip("{}").replace("-", "")
+    g = _GUID()
+    g.Data1 = int(h[0:8], 16)
+    g.Data2 = int(h[8:12], 16)
+    g.Data3 = int(h[12:16], 16)
+    for i in range(8):
+        g.Data4[i] = int(h[16 + i * 2:18 + i * 2], 16)
+    return g
+
+
+_USB_ID_RE = re.compile(r"vid_([0-9a-fA-F]{4})&pid_([0-9a-fA-F]{4})", re.IGNORECASE)
+
+
+def parse_usb_ids(interface_path: str | None) -> tuple[str | None, str | None]:
+    """从设备接口路径提取 (vid, pid)。路径形如
+    \\\\?\\usb#vid_8087&pid_0026#5&2f31c4&0&1#{guid}（含实例串，设备身份）。"""
+    m = _USB_ID_RE.search(interface_path or "")
+    return (m.group(1).upper(), m.group(2).upper()) if m else (None, None)
+
+
 class Win32MessageSensor(Sensor):
     name = "system.power"  # 实际发布 system.power / system.session / app.foreground 等多个命名空间
 
@@ -95,6 +148,7 @@ class Win32MessageSensor(Sensor):
         self._thread: threading.Thread | None = None
         self._hwnd = 0
         self._hook = None
+        self._devnotify = None          # USB 设备通知注册句柄
         self._wndproc_ref = None     # 防 GC：ctypes 回调必须持强引用（勿与方法同名）
         self._wineventproc_ref = None  # 同上
         self._suspend_wall: str | None = None
@@ -147,6 +201,16 @@ class Win32MessageSensor(Sensor):
             if not self._hook:
                 log.warning("SetWinEventHook 失败（前台事件不可用）")
 
+            # USB 插拔：注册 USB 设备接口类通知（带 VID/PID 的接口路径）
+            filt = _DEV_BROADCAST_DEVICEINTERFACE_W()
+            filt.dbcc_size = ctypes.sizeof(_DEV_BROADCAST_DEVICEINTERFACE_W)
+            filt.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE
+            filt.dbcc_classguid = _guid_from_str(GUID_DEVINTERFACE_USB_DEVICE)
+            self._devnotify = _user32.RegisterDeviceNotificationW(
+                self._hwnd, ctypes.byref(filt), DEVICE_NOTIFY_WINDOW_HANDLE)
+            if not self._devnotify:
+                log.warning("RegisterDeviceNotification 失败（USB 事件不可用）")
+
             self._emit(SensorNS.SENSOR_STATUS, "started",
                        {"sensor": self.name, "hwnd": self._hwnd})
 
@@ -162,6 +226,12 @@ class Win32MessageSensor(Sensor):
             self._teardown()
 
     def _teardown(self) -> None:
+        if self._devnotify:
+            try:
+                _user32.UnregisterDeviceNotification(self._devnotify)
+            except Exception:
+                pass
+            self._devnotify = None
         if self._hook:
             try:
                 _user32.UnhookWinEvent(self._hook)
@@ -200,6 +270,19 @@ class Win32MessageSensor(Sensor):
         if msg == WM_WTSSESSION_CHANGE:
             self._emit(SensorNS.SESSION, WTS_REASON.get(wparam, f"unknown_{wparam}"), {})
             return 0
+        if msg == WM_QUERYENDSESSION:
+            # 关机/注销前奏：留痕后小睡，给落库（0.5s flush 周期）留时间
+            self._emit(SensorNS.SESSION, "shutdown_pending", {})
+            time.sleep(0.8)
+            return 1  # 同意关机
+        if msg == WM_ENDSESSION:
+            self._emit(SensorNS.SESSION, "session_end", {"ending": bool(wparam)})
+            time.sleep(0.8)
+            return 0
+        if msg == WM_DEVICECHANGE:
+            if wparam in (DBT_DEVICEARRIVAL, DBT_DEVICEREMOVECOMPLETE) and lparam:
+                self._on_usb_change(wparam, lparam)
+            return 1
         if msg == WM_CLOSE:
             _user32.DestroyWindow(hwnd)
             return 0
@@ -233,6 +316,21 @@ class Win32MessageSensor(Sensor):
             })
         except Exception:
             log.exception("前台事件处理失败")
+
+    # ---------- USB 插拔（消息线程） ----------
+
+    def _on_usb_change(self, wparam: int, lparam: int) -> None:
+        try:
+            hdr = _DEV_BROADCAST_HDR.from_address(lparam)
+            if hdr.dbch_devicetype != DBT_DEVTYP_DEVICEINTERFACE:
+                return  # 卷到达/自定义设备等其他类型，Phase 1 后按需扩展
+            name = ctypes.wstring_at(lparam + 28)  # dbcc_name 偏移（变长宽字符串）
+            vid, pid = parse_usb_ids(name)
+            self._emit(SensorNS.USB,
+                       "arrived" if wparam == DBT_DEVICEARRIVAL else "removed",
+                       {"vid": vid, "pid": pid, "path": name})
+        except Exception:
+            log.exception("USB 设备事件处理失败")
 
     @staticmethod
     def _exe_name(pid: int) -> str | None:

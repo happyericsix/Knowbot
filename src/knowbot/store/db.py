@@ -16,7 +16,7 @@ from ..envelope import Event
 
 _SCHEMA = Path(__file__).with_name("schema.sql").read_text(encoding="utf-8")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2 = Phase 1 记忆库五表（docs/phase1-memory-ddl.md）
 
 
 class EventStore:
@@ -24,8 +24,11 @@ class EventStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row  # 技能/记忆层按列名取值
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        # 全部 DDL 幂等（IF NOT EXISTS）：旧库打开即自动升级到当前版本
         self._conn.executescript(_SCHEMA)
         self._conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self._buffer: list[tuple] = []

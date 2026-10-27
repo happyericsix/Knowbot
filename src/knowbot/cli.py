@@ -72,6 +72,58 @@ def _cmd_replay(args) -> None:
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 
 
+def _cmd_calibrate(args) -> None:
+    """toast 校准按钮的回传落点：knowbot:calibrate?... → 学习器（pythonw 静默运行）。"""
+    import sqlite3
+    import time
+    from pathlib import Path
+
+    from .learning.learner import VolumeLearner
+    from .notify.protocol import parse_calibrate_uri
+    from .store.memory import MemoryStore
+
+    params = parse_calibrate_uri(args.uri)
+    if params is None:
+        print(f"非法校准 URI: {args.uri}", file=sys.stderr)
+        raise SystemExit(2)
+    db = args.db or Config.load(args.config).db_path
+    result = {"ok": False, "error": "unreachable"}
+    try:
+        conn = sqlite3.connect(db, timeout=5)
+        conn.row_factory = sqlite3.Row
+        try:
+            result = VolumeLearner(MemoryStore(conn)).apply_calibration(
+                params["value"], params["pref"], params["action"], via="toast")
+        finally:
+            conn.close()
+    except Exception as e:
+        result = {"ok": False, "error": repr(e)}
+    # pythonw 无控制台：结果留痕到 data/calibrate.log（诊断回传链路用）
+    try:
+        log_path = Path(db).parent / "calibrate.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {args.uri} -> "
+                    f"{json.dumps(result, ensure_ascii=False)}\n")
+    except Exception:
+        pass
+    print(json.dumps(result, ensure_ascii=False))
+    raise SystemExit(0 if result.get("ok") else 1)
+
+
+def _cmd_install_protocol(args) -> None:
+    from .notify.protocol import ensure_protocol_handler
+    from .notify.toast import ensure_appid
+
+    ensure_appid()  # 未注册 AUMID 的 toast 静默不显示
+    db = args.db or Config.load(args.config).db_path
+    try:
+        ok = ensure_protocol_handler(db)
+    except Exception as e:
+        print(f"注册失败: {e!r}", file=sys.stderr)
+        raise SystemExit(1)
+    print("knowbot: 协议与 AUMID 已注册" if ok else "非 Windows 平台，跳过注册")
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
         prog="knowbot", description="个人驻留事件 Agent —— Phase 0 事件记录仪")
@@ -109,6 +161,17 @@ def main(argv=None) -> None:
     p.add_argument("--speed", type=float, default=0.0,
                    help="0=全速校验；>0 按事件时间差/该倍速回放")
     p.set_defaults(func=_cmd_replay)
+
+    p = sub.add_parser("calibrate", help="toast 校准回传落点（knowbot: URI → 记忆库）")
+    p.add_argument("uri", help="knowbot:calibrate?value=ok&pref=17&action=42")
+    p.add_argument("--config", default=None)
+    p.add_argument("--db", default=None, help="覆盖数据库路径（协议注册时写入）")
+    p.set_defaults(func=_cmd_calibrate)
+
+    p = sub.add_parser("install-protocol", help="注册 knowbot: URI 协议（toast 按钮回传）")
+    p.add_argument("--config", default=None)
+    p.add_argument("--db", default=None)
+    p.set_defaults(func=_cmd_install_protocol)
 
     args = parser.parse_args(argv)
     logging.basicConfig(

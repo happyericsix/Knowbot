@@ -1,7 +1,7 @@
 import sqlite3
 
 from knowbot.envelope import Event
-from knowbot.store.db import EventStore, iter_events, sensor_stats, tail_events
+from knowbot.store.db import SCHEMA_VERSION, EventStore, iter_events, sensor_stats, tail_events
 
 
 def test_store_roundtrip(tmp_path):
@@ -18,7 +18,7 @@ def test_store_roundtrip(tmp_path):
     # 批量阈值触发过（batch_size=2，5 条 > 2）且 close 冲刷余量
     conn = sqlite3.connect(db)
     assert conn.execute("SELECT COUNT(*) FROM event_raw").fetchone()[0] == 5
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     conn.close()
 
 
@@ -42,7 +42,7 @@ def test_stats_shape(tmp_path):
 
     stats = sensor_stats(db)
     assert stats["total"] == 3
-    assert stats["user_version"] == 1
+    assert stats["user_version"] == SCHEMA_VERSION
     assert stats["sensors"]["a.b"]["count"] == 2
     assert stats["sensors"]["c.d"]["count"] == 1
 
