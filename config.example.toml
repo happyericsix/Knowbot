@@ -22,7 +22,7 @@ enable_winmsg = true
 # 聚合层（A3）：把传感器爆发折叠成语义事件（audio.flow 命名空间）
 # churn_flips/co_devices 双阈值：单设备翻转多，或多端点协同翻转，都判不稳定
 enable_aggregation = true
-agg_settle_s = 2.0
+agg_settle_s = 1.0
 agg_churn_flips = 3
 agg_co_window_s = 3.0
 agg_co_devices = 2

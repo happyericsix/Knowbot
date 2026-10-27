@@ -26,7 +26,9 @@ class Config:
 
     # 聚合层（A3）：爆发折叠为语义事件（audio.flow 命名空间）
     enable_aggregation: bool = True
-    agg_settle_s: float = 2.0
+    # 折叠安静期：切换/插拔后安静这么久即定案。实测角色突发在 ~300ms 内
+    # 完成，1.0s 已是安全余量（2026-10-27 由 2.0 压低：反馈延迟大头）
+    agg_settle_s: float = 1.0
     agg_churn_flips: int = 3
     agg_max_span_s: float = 60.0
     agg_tick_interval: float = 0.5
