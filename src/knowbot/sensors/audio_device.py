@@ -14,13 +14,14 @@ from __future__ import annotations
 import ctypes
 import logging
 import threading
+import time
 from ctypes import wintypes
 
 from ..bus import EventBus
 from ..envelope import Event, Sensor as SensorNS
 from ..executors.volume import (
     AGENT_CONTEXT_GUID, decide_prearm, endpoint_volume, get_master_scalar,
-    set_master_scalar,
+    prearm_allowed, set_master_scalar,
 )
 from .base import Sensor
 
@@ -88,6 +89,7 @@ class AudioDeviceSensor(Sensor):
                  vol_settle_s: float = 1.5, enable_prearm: bool = False,
                  prearm_safe_scalar: float = 0.2,
                  prearm_only_lower: bool = True,
+                 prearm_cooldown_s: float = 300.0,
                  is_paused=None) -> None:
         self._bus = bus
         self._thread: threading.Thread | None = None
@@ -100,6 +102,8 @@ class AudioDeviceSensor(Sensor):
         self._enable_prearm = enable_prearm
         self._prearm_safe = prearm_safe_scalar
         self._prearm_only_lower = prearm_only_lower
+        self._prearm_cooldown_s = prearm_cooldown_s
+        self._prearm_ts: dict[str, float] = {}  # 设备 → 上次布防时刻（see-saw 防护）
         # 全局暂停探针（STA 线程调用；实现方须自备连接，不共享 store 连接）
         self._is_paused = is_paused
         self._last_default_render: str | None = None
@@ -290,9 +294,14 @@ class AudioDeviceSensor(Sensor):
             _user32.SetTimer(self._vol_hwnd, REARM_TIMER_ID, 400, self._rearm_timerproc_ref)
         # pre-arm：趁 prev 端点休眠布防（方案 §5：把竞态变成预先布防）。
         # 全局暂停同样约束反射层——暂停的语义是"agent 别动我的系统"。
+        # see-saw 防护：快速来回切换时同设备冷却期内不重复布防
+        # （实证 2026-10-27 23:10：75 秒 6 次布防写放大）。
         if not (self._enable_prearm and prev and prev != new_id):
             return
         if self._is_paused is not None and self._is_paused():
+            return
+        last = self._prearm_ts.get(prev)
+        if not prearm_allowed(last, time.monotonic(), self._prearm_cooldown_s):
             return
         try:
             cur = get_master_scalar(self._enumerator, prev)
@@ -302,6 +311,7 @@ class AudioDeviceSensor(Sensor):
                 return
             before = set_master_scalar(self._enumerator, target, prev)
             if before is not None:
+                self._prearm_ts[prev] = time.monotonic()
                 self._bus.publish_threadsafe(Event(self.name, "prearm", {
                     "device_id": prev, "new_default": new_id,
                     "before": round(before, 4), "after": round(target, 4),

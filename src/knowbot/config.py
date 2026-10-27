@@ -42,6 +42,14 @@ class Config:
     enable_volume_skill: bool = True
     volume_skill_dry_run: bool = True
 
+    # 计算礼貌（哲学 9）：影子决策 toast 节流——同设备冷却 + 全局日预算。
+    # 决策照常落台账，只压制通知（实证：2026-10-27 23:10 风暴，75 秒 6 条）
+    shadow_toast_cooldown_s: float = 600.0
+    shadow_toast_daily: int = 30
+
+    # prearm 冷却：同设备 N 秒内不重复布防（防快速来回切换的 see-saw 写放大）
+    prearm_cooldown_s: float = 300.0
+
     # Phase 1 ③：面板（localhost）与通知
     enable_panel: bool = True
     panel_port: int = 7681

@@ -27,3 +27,11 @@ def test_same_or_missing_device_no_op():
 def test_missing_current_no_op():
     """读不到当前值（设备已消失等）→ 不动。"""
     assert decide_prearm("A", "B", None, 0.2) is None
+
+
+def test_prearm_cooldown():
+    """同设备布防冷却（see-saw 防护）：冷却期内拒绝，期满放行。"""
+    from knowbot.executors.volume import prearm_allowed
+    assert prearm_allowed(None, 100.0) is True            # 从未布防
+    assert prearm_allowed(100.0, 100.0 + 299.0) is False  # 冷却期内
+    assert prearm_allowed(100.0, 100.0 + 300.0) is True   # 期满

@@ -69,6 +69,7 @@ async def run(config: Config, duration: float = 0.0) -> dict:
             enable_prearm=config.enable_prearm,
             prearm_safe_scalar=config.prearm_safe_scalar,
             prearm_only_lower=config.prearm_only_lower,
+            prearm_cooldown_s=config.prearm_cooldown_s,
             is_paused=_db_paused,
         ))
     if config.enable_winmsg:
@@ -121,7 +122,9 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         skill = VolumeSkill(
             bus, memory, VolumeLearner(memory), volume_executor,
             VolumeAttributionParams(), dry_run=config.volume_skill_dry_run,
-            notifier=notifier)
+            notifier=notifier,
+            toast_cooldown_s=config.shadow_toast_cooldown_s,
+            toast_daily=config.shadow_toast_daily)
         skill.start(loop)
 
     if config.enable_panel:

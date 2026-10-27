@@ -43,6 +43,10 @@ CONF_SUGGEST = 0.50
 # 指向同一意图），窗口内的第二个触发让路——对意图反应，不对物理动作重复反应
 TRIGGER_DEDUP_S = 5.0
 
+# 影子决策 toast 节流（哲学 9 计算礼貌；决策照常落台账，只压制通知）：
+# 同设备冷却窗 + 全局日预算。真实执行档（notify/silent）不受此限。
+SHADOW_TOAST_COOLDOWN_S = 600.0
+SHADOW_TOAST_DAILY = 30
 
 class VolumeSkill:
     name = "volume"
@@ -50,7 +54,8 @@ class VolumeSkill:
     def __init__(self, bus: EventBus, memory: MemoryStore, learner: VolumeLearner,
                  executor, params: VolumeAttributionParams | None = None,
                  dry_run: bool = True, meter_factory=None,
-                 notifier=None) -> None:
+                 notifier=None, toast_cooldown_s: float = SHADOW_TOAST_COOLDOWN_S,
+                 toast_daily: int = SHADOW_TOAST_DAILY) -> None:
         self._bus = bus
         self._m = memory
         self._learner = learner
@@ -59,6 +64,10 @@ class VolumeSkill:
         self._dry_run = dry_run
         self._meter_factory = meter_factory  # () -> 采样器（测试注入 None 跳过）
         self._notifier = notifier           # (title, body) -> None（默认 toast）
+        self._toast_cooldown_s = toast_cooldown_s
+        self._toast_daily = toast_daily
+        self._toast_ts: dict[str, float] = {}      # device_id → 上次影子 toast
+        self._toast_day: tuple[str, int] = ("", 0)  # (日期, 当日已用额度)
         self._watches: dict[str, _Watch] = {}
         self._last_trigger: dict[str, float] = {}  # device_id → 触发时刻（去重）
         self._pending: dict[str, Event] = {}   # 观察窗占用期被挡的触发（停轮后补决策）
@@ -195,9 +204,11 @@ class VolumeSkill:
                 undo_payload={"restore": before},
                 latency_ms=(time.monotonic() - action_ts) * 1000)
             # 影子模式 toast 即交互本体：三键校准是影子周决策质量的显式裁决通道
-            self._notify("knowbot 影子决策",
-                         f"我会把 {label} 调到 {target:.0%}——感觉如何？",
-                         self._calibrate_actions(pref["id"], action_id))
+            # （节流：同设备冷却 + 日预算——快速切换风暴不再连环轰炸，台账照记）
+            self._shadow_notify(
+                device_id, "knowbot 影子决策",
+                f"我会把 {label} 调到 {target:.0%}——感觉如何？",
+                self._calibrate_actions(pref["id"], action_id))
         elif effective_mode == "suggest":
             before = self._executor.get(device_id)
             action_id = self._m.log_action(
@@ -300,6 +311,25 @@ class VolumeSkill:
         return [("太轻", calibrate_uri("soft", pref_id, action_id)),
                 ("刚好", calibrate_uri("ok", pref_id, action_id)),
                 ("太吵", calibrate_uri("loud", pref_id, action_id))]
+
+    def _shadow_notify(self, device_id: str, title: str, body: str,
+                       actions: list | None = None) -> None:
+        """影子决策通知的节流闸：同设备冷却 + 全局日预算（超限静默落台账）。"""
+        import datetime as _dt
+        now = time.monotonic()
+        today = _dt.date.today().isoformat()
+        if self._toast_day[0] != today:
+            self._toast_day = (today, 0)
+        if self._toast_day[1] >= self._toast_daily:
+            log.info("影子 toast 日预算已尽（%d），静默落台账", self._toast_daily)
+            return
+        last = self._toast_ts.get(device_id)
+        if last is not None and now - last < self._toast_cooldown_s:
+            log.info("设备 %s 影子 toast 冷却中，静默落台账", device_id[-12:])
+            return
+        self._toast_ts[device_id] = now
+        self._toast_day = (today, self._toast_day[1] + 1)
+        self._notify(title, body, actions)
 
     def _notify(self, title: str, body: str, actions: list | None = None) -> None:
         if self._notifier is None:

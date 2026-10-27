@@ -432,3 +432,58 @@ def test_resting_default_gets_pending_decision(tmp_path, monkeypatch):
         store.close()
 
     asyncio.run(main())
+
+
+# ---------- 计算礼貌（哲学 9）：影子 toast 节流（2026-10-27 23:10 风暴实证） ----------
+
+class _Recorder:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, title, body, actions=None):
+        self.calls.append(title)
+
+
+def test_shadow_toast_device_cooldown(tmp_path):
+    """同设备冷却期内重复决策照常落台账，但只弹一次通知。"""
+    async def main():
+        store, memory = _setup(tmp_path)
+        bus = EventBus(); bus.bind(asyncio.get_running_loop())
+        rec = _Recorder()
+        skill = VolumeSkill(bus, memory, VolumeLearner(memory), FakeExecutor(), P,
+                            dry_run=True, meter_factory=None, notifier=rec)
+        skill.start(asyncio.get_running_loop())
+        # 两次触发间隔 > 观察窗（0.3s），第二次是全新决策——但冷却 600s 内
+        await _drive(bus, skill, [(0.05, settled_event()),
+                                  (0.50, settled_event())], settle=0.5)
+        skill.stop()
+        n = memory.conn.execute("SELECT COUNT(*) FROM action_log").fetchone()[0]
+        assert n == 2                       # 决策一条不少
+        assert len(rec.calls) == 1          # 通知只弹一次
+        store.close()
+
+    asyncio.run(main())
+
+
+def test_shadow_toast_daily_budget(tmp_path):
+    """全局日预算：跨设备也受总额限制，超限静默落台账。"""
+    async def main():
+        store, memory = _setup(tmp_path)
+        bus = EventBus(); bus.bind(asyncio.get_running_loop())
+        rec = _Recorder()
+        skill = VolumeSkill(bus, memory, VolumeLearner(memory), FakeExecutor(), P,
+                            dry_run=True, meter_factory=None, notifier=rec,
+                            toast_daily=1)
+        skill.start(asyncio.get_running_loop())
+        dev_b = Event("audio.flow", "default_output", {
+            "device_id": "{other-dev}", "flow": "render", "role": "multimedia",
+            "form_factor": "speakers", "repeats": 1})
+        await _drive(bus, skill, [(0.05, settled_event()),
+                                  (0.15, dev_b)], settle=0.5)
+        skill.stop()
+        n = memory.conn.execute("SELECT COUNT(*) FROM action_log").fetchone()[0]
+        assert n == 2
+        assert len(rec.calls) == 1          # 预算 1：第二台设备静默
+        store.close()
+
+    asyncio.run(main())

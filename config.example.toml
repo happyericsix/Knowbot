@@ -38,3 +38,12 @@ vol_settle_s = 1.5
 enable_prearm = false
 prearm_safe_scalar = 0.2
 prearm_only_lower = true
+prearm_cooldown_s = 300.0   # 同设备布防冷却（see-saw 防护，秒）
+
+# Phase 1 ②：音量技能（首个 Skill，影子模式起步）
+enable_volume_skill = true
+volume_skill_dry_run = true
+
+# 计算礼貌（哲学 9）：影子决策 toast 节流——决策照常落台账，只压制通知
+shadow_toast_cooldown_s = 600.0   # 同设备冷却（秒）
+shadow_toast_daily = 30           # 全局日预算（条）

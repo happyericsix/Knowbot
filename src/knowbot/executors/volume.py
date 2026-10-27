@@ -16,6 +16,15 @@ AGENT_CONTEXT_GUID = GUID("{7A5B9C31-4E2A-4F8B-9C6D-1F0E3A2B4C55}")
 CLSCTX_ALL = comtypes.CLSCTX_ALL
 
 
+def prearm_allowed(last_ts: float | None, now: float,
+                   cooldown_s: float = 300.0) -> bool:
+    """同设备布防冷却（see-saw 防护）：快速来回切换时不重复写音量。
+
+    实证：2026-10-27 23:10 风暴，75 秒内同一端点被布防 4 次。
+    """
+    return last_ts is None or (now - last_ts) >= cooldown_s
+
+
 def decide_prearm(prev_default: str | None, new_default: str | None,
                   current_scalar: float | None, safe_scalar: float,
                   only_lower: bool = True) -> float | None:
