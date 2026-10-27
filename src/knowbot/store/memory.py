@@ -202,6 +202,14 @@ class MemoryStore:
              trigger_event_id, now_iso(), action_id))
         self.conn.commit()
 
+    def set_action_trigger(self, action_id: int, trigger_event_id: int) -> None:
+        """延迟回填触发事件溯源（prearm 台账：落账时事件尚在落库缓冲区）。"""
+        self.conn.execute(
+            "UPDATE action_log SET trigger_event_id=?"
+            " WHERE id=? AND trigger_event_id IS NULL",
+            (trigger_event_id, action_id))
+        self.conn.commit()
+
 
 # ---- 类级先验种子（社区库的占位实现；幂等） ----
 

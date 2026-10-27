@@ -182,3 +182,21 @@ MMDevice ID 前缀 `{0.0.1.` 识别——state_changed 元信息不含 flow，�
 快速来回切换 = 意图未定不重复出手；停止后的停留输出 = 最终意图，必有决策。
 最终决策出现在停轮后 ~30s（= 归因观察窗时长，校准 Q2 的用户自定值），
 这是特性不是延迟——观察窗是归因完整性的底线。
+
+## 15. pre-arm 上线：台账化 + 暂停覆盖（2026-10-27）
+
+前置条件全部满足（STA 修复验证 ✅、事件链 ✅、触发与校准闭环 ✅），
+`enable_prearm=true` 落地。两个工程修订：
+
+1. **台账不可豁免的落实**：pre-arm 原先只发 `audio.device/prearm` 事件、
+   无任何台账落账（传感器层不碰记忆库）。新增 PrearmLedger 消费者
+   （skills/prearm.py）：skill=prearm / exec_mode=silent / risk=zero /
+   undo=前值 / 溯源回填到触发它的 default_changed（落账时事件尚在
+   落库缓冲区，延迟 2s 反查）。反应位留空：prearm 无观察窗、对用户
+   不可见，纠正信号=面板撤销（撤销即 reject/false_alarm）或下次使用
+   该设备时的手动调整（audio.volume 链路自然捕获）——不虚构裁决。
+   周窗"待裁决"统计排除 prearm（不可见布防不期待裁决）。
+2. **全局暂停覆盖反射层**：暂停的语义是"agent 别动我的系统"，反射层
+   不豁免。传感器增加 is_paused 探针（daemon 注入；独立只读连接查询
+   meta.paused，不与 store 共享连接避免跨线程竞争；默认切换是稀有
+   事件，连接开销可忽略）。

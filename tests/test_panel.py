@@ -42,10 +42,14 @@ def env(tmp_path):
         "volume", None, draft["id"],
         {"type": "set_volume", "device_id": "{X}", "before": 0.8, "after": 0.35},
         "dry_run", 2.0, undo_payload={"restore": 0.8})
+    prearm_id = memory.log_action(  # 反射层布防（台账不可豁免）
+        "prearm", None, None,
+        {"type": "prearm", "device_id": "{X}", "before": 0.6, "after": 0.2},
+        "silent", 3.0, risk="zero", undo_payload={"restore": 0.6})
     server = PanelServer(tmp_path / "p.db", executor=FakeExecutor(), port=0,
                          flags={"dry_run": True})
     server.start()
-    yield server, memory, draft["id"], action_id, dry_id, store
+    yield server, memory, draft["id"], action_id, dry_id, store, prearm_id
     server.stop()
     store.close()
 
@@ -90,7 +94,7 @@ def test_reject_draft_suppresses(env):
 
 
 def test_undo_restores_volume(env):
-    server, memory, draft_id, action_id, dry_id, _ = env
+    server, memory, draft_id, action_id, dry_id, _, _ = env
     base = f"http://127.0.0.1:{server.bound_port}"
     executor = server.executor
     d = _req(base, f"/api/action/{action_id}/undo", "POST")
@@ -105,6 +109,19 @@ def test_undo_restores_volume(env):
     # 影子动作无实际效果 → 拒绝撤销
     d2 = _req(base, f"/api/action/{dry_id}/undo", "POST")
     assert d2["ok"] is False
+
+
+def test_undo_prearm_restores(env):
+    """反射层 prearm 布防同样可撤销（恢复到布防前音量）。"""
+    server, memory, *_ , prearm_id = env
+    base = f"http://127.0.0.1:{server.bound_port}"
+    executor = server.executor
+    d = _req(base, f"/api/action/{prearm_id}/undo", "POST")
+    assert d["ok"] and d["restored"] == 0.6
+    assert executor.calls[-1] == ("{X}", 0.6)
+    row = memory.conn.execute(
+        "SELECT reaction, quadrant FROM action_log WHERE id=?", (prearm_id,)).fetchone()
+    assert row["reaction"] == "reject"          # 撤销即裁决：记误报
 
 
 def test_pause_toggle(env):
@@ -148,4 +165,5 @@ def test_overview_quadrant_week(env):
     assert qw["window_days"] == 7 and qw["health_line"] == 0.10
     assert qw["counts"]["false_alarm"] == 1
     assert qw["fa_rate"] == 1.0                      # 唯一出手即误报
-    assert qw["unresolved"] == 1                     # dry_run 那条待裁决
+    # dry_run 那条待裁决=1；prearm 布防（无观察窗）不计入待裁决
+    assert qw["unresolved"] == 1

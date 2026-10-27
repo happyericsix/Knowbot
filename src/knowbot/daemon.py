@@ -44,6 +44,24 @@ async def run(config: Config, duration: float = 0.0) -> dict:
 
     add(HeartbeatSensor(bus, period=config.heartbeat_period))
     if config.enable_audio:
+        # pre-arm 的全局暂停探针：STA 线程调用，须用独立只读连接
+        # （不与 store 共享连接，避免跨线程竞争；默认切换是稀有事件）
+        import sqlite3
+        from pathlib import Path as _P
+
+        def _db_paused() -> bool:
+            try:
+                uri = f"file:{_P(config.db_path).resolve().as_posix()}?mode=ro"
+                conn = sqlite3.connect(uri, uri=True)
+                try:
+                    row = conn.execute(
+                        "SELECT value FROM meta WHERE key='paused'").fetchone()
+                    return bool(row and row[0] == "1")
+                finally:
+                    conn.close()
+            except Exception:
+                return False  # 读不到库时按未暂停处理（反射层不受影响）
+
         add(AudioDeviceSensor(
             bus,
             watch_volume=config.enable_volume_watch,
@@ -51,6 +69,7 @@ async def run(config: Config, duration: float = 0.0) -> dict:
             enable_prearm=config.enable_prearm,
             prearm_safe_scalar=config.prearm_safe_scalar,
             prearm_only_lower=config.prearm_only_lower,
+            is_paused=_db_paused,
         ))
     if config.enable_winmsg:
         add(Win32MessageSensor(bus))
@@ -69,6 +88,7 @@ async def run(config: Config, duration: float = 0.0) -> dict:
     skill = None
     panel = None
     volume_executor = None
+    prearm_ledger = None
     if config.enable_volume_skill or config.enable_panel:
         from .attribution.volume import VolumeAttributionParams
         from .executors.volume import VolumeExecutor
@@ -77,6 +97,12 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         memory = MemoryStore(store._conn)
         seed_defaults(memory)
         volume_executor = VolumeExecutor()
+
+        if config.enable_prearm:
+            # 反射层动作的台账落账（哲学 7：台账不可豁免）
+            from .skills.prearm import PrearmLedger
+            prearm_ledger = PrearmLedger(bus, memory)
+            prearm_ledger.start(loop)
 
     if config.enable_volume_skill:
         from .learning.learner import VolumeLearner
@@ -156,6 +182,8 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         aggregation.stop()
     if skill is not None:
         skill.stop()
+    if prearm_ledger is not None:
+        prearm_ledger.stop()
     if panel is not None:
         panel.stop()
 

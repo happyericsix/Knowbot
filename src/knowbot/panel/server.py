@@ -154,7 +154,7 @@ class _Handler(BaseHTTPRequestHandler):
             paused = (c.execute(
                 "SELECT value FROM meta WHERE key='paused'").fetchone() or ["0"])[0]
             rows = c.execute(
-                "SELECT ts_wall, quadrant, reaction, exec_mode FROM action_log").fetchall()
+                "SELECT ts_wall, quadrant, reaction, exec_mode, skill FROM action_log").fetchall()
         self._json({
             "events_total": total, "sensors": sensors, "last_event": last_wall,
             "preferences": prefs, "actions_total": actions,
@@ -285,8 +285,10 @@ def _quadrant_week(rows, window_days: int = 7,
             ts = _parse_wall(r["ts_wall"])
             if ts is not None and ts >= cutoff:
                 counts[quadrant] = counts.get(quadrant, 0) + 1
-        elif r["reaction"] is None and r["exec_mode"] != "none":
-            unresolved += 1  # 出过手（含影子）但还没裁决的
+        elif (r["reaction"] is None and r["exec_mode"] != "none"
+              and r["skill"] != "prearm"):
+            unresolved += 1  # 出过手（含影子）但还没裁决的；prearm 不可见布防
+            # 无观察窗、不期待裁决，不计入（其失败信号 = 面板撤销）
     fired = counts["false_alarm"] + counts["correct_detection"]
     fa_rate = (counts["false_alarm"] / fired) if fired else None
     return {"window_days": window_days, "counts": counts,

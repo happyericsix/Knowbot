@@ -74,16 +74,16 @@ docs/                A1 DDL / A2 归因 / A3 聚合 / 设计修订登记 / 场�
 tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
 ```
 
-## 当前状态（2026-10-27 晚）
+## 当前状态（2026-10-27 深夜）
 
 - Phase 0 ✅；入场券 A1/A2/A3 ✅；Phase 1 ①②③ ✅
 - 影子周配套 ✅：三键校准闭环、周窗 FA 率仪表、台账 trigger_event_id 溯源回填
 - **ZG2 插拔会话全链路验证 ✅（10-26~27）**：STA 修复确认、触发规则修订为
-  "成为听音输出皆触发，排除 hdmi/远程/capture"（§13）、toast AUMID 静默坑
-  修复（战报 #9）、**首条实例信念诞生（ZG2→0.25，explicit/0.9）+ 首个
-  台账 accept**——三键校准按钮→协议→落库全链路真机打通
-- 下一步：影子周收数（周 FA 率 <10% 读数）→ 开 pre-arm（第一个真实动作）
-  → 关 dry-run
+  "成为听音输出皆触发，排除 hdmi/远程/capture"（§13）、停留输出补决策（§14）、
+  toast AUMID 静默坑修复（战报 #9）、首条实例信念诞生（ZG2→0.25，explicit/0.9）
+- **pre-arm 已上线（§15）**：PrearmLedger 台账化 + 全局暂停覆盖反射层，
+  `enable_prearm=true`——**agent 第一个真实动作待下次默认输出切换触发**
+- 下一步：切换一次默认输出验证 pre-arm 真机首秀 → 影子周读数 → 关 dry-run
 - 详见 docs/phase-progress.md（进度）与 docs/design-amendments.md（与方案v0.1的偏差）
 
 ## 与本项目的 agent 对话时

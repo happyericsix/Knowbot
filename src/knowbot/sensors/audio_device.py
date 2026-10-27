@@ -87,7 +87,8 @@ class AudioDeviceSensor(Sensor):
     def __init__(self, bus: EventBus, *, watch_volume: bool = True,
                  vol_settle_s: float = 1.5, enable_prearm: bool = False,
                  prearm_safe_scalar: float = 0.2,
-                 prearm_only_lower: bool = True) -> None:
+                 prearm_only_lower: bool = True,
+                 is_paused=None) -> None:
         self._bus = bus
         self._thread: threading.Thread | None = None
         self._client = None    # 防 GC：COMObject 回调对象强引用
@@ -99,6 +100,8 @@ class AudioDeviceSensor(Sensor):
         self._enable_prearm = enable_prearm
         self._prearm_safe = prearm_safe_scalar
         self._prearm_only_lower = prearm_only_lower
+        # 全局暂停探针（STA 线程调用；实现方须自备连接，不共享 store 连接）
+        self._is_paused = is_paused
         self._last_default_render: str | None = None
         self._vol_cb = None        # 防 GC：音量回调 COMObject
         self._vol_cb_ptr = None    # 注册用接口指针
@@ -285,8 +288,11 @@ class AudioDeviceSensor(Sensor):
         prev, self._last_default_render = self._last_default_render, new_id
         if self._watch_volume and self._vol_hwnd:
             _user32.SetTimer(self._vol_hwnd, REARM_TIMER_ID, 400, self._rearm_timerproc_ref)
-        # pre-arm：趁 prev 端点休眠布防（方案 §5：把竞态变成预先布防）
+        # pre-arm：趁 prev 端点休眠布防（方案 §5：把竞态变成预先布防）。
+        # 全局暂停同样约束反射层——暂停的语义是"agent 别动我的系统"。
         if not (self._enable_prearm and prev and prev != new_id):
+            return
+        if self._is_paused is not None and self._is_paused():
             return
         try:
             cur = get_master_scalar(self._enumerator, prev)
@@ -297,8 +303,8 @@ class AudioDeviceSensor(Sensor):
             before = set_master_scalar(self._enumerator, target, prev)
             if before is not None:
                 self._bus.publish_threadsafe(Event(self.name, "prearm", {
-                    "device_id": prev, "before": round(before, 4),
-                    "after": round(target, 4),
+                    "device_id": prev, "new_default": new_id,
+                    "before": round(before, 4), "after": round(target, 4),
                 }))
         except Exception:
             log.warning("pre-arm 执行失败", exc_info=True)
