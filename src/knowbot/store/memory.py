@@ -68,7 +68,8 @@ class MemoryStore:
             "SELECT * FROM action_log WHERE id=?", (action_id,)).fetchone()
 
     def update_preference(self, pref_id: int, *, confidence: float | None = None,
-                          source: str | None = None, state: str | None = None) -> None:
+                          source: str | None = None, state: str | None = None,
+                          value: dict | None = None) -> None:
         sets, params = [], []
         if confidence is not None:
             sets.append("confidence=?"); params.append(float(confidence))
@@ -76,6 +77,9 @@ class MemoryStore:
             sets.append("source=?"); params.append(source)
         if state is not None:
             sets.append("state=?"); params.append(state)
+        if value is not None:
+            sets.append("value=?")
+            params.append(json.dumps(value, ensure_ascii=False))
         if not sets:
             return
         sets.append("updated_at=?"); params.extend([now_iso(), pref_id])
@@ -142,12 +146,12 @@ class MemoryStore:
 
     # ---- 证据与台账 ----
 
-    def find_event_id(self, sensor: str, type_: str, device_id: str,
+    def find_event_id(self, sensor: str, type_: str, device_id: str | None,
                       around_mono: float, tol_s: float = 5.0) -> int | None:
         """按触发时刻反查 event_raw.id（补台账 trigger_event_id 的溯源链）。
 
-        触发事件此刻应已落库（观察窗 ≥ flush 周期）；候选窗口内按
-        payload.device_id 精确匹配，取 ts_mono 最接近的一行。
+        触发事件此刻应已落库（观察窗 ≥ flush 周期）；device_id 为 None 时不
+        按 payload 过滤（如 session_unlock 无设备标识），取 ts 最接近的一行。
         """
         rows = self.conn.execute(
             "SELECT id, ts_mono, payload FROM event_raw"
@@ -157,11 +161,12 @@ class MemoryStore:
         ).fetchall()
         best, best_diff = None, None
         for r in rows:
-            try:
-                if json.loads(r["payload"]).get("device_id") != device_id:
+            if device_id is not None:
+                try:
+                    if json.loads(r["payload"]).get("device_id") != device_id:
+                        continue
+                except Exception:
                     continue
-            except Exception:
-                continue
             diff = abs(r["ts_mono"] - around_mono)
             if best_diff is None or diff < best_diff:
                 best, best_diff = r["id"], diff

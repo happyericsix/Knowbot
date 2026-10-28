@@ -62,6 +62,14 @@ class Config:
     panel_port: int = 7681
     enable_toast: bool = True
 
+    # Phase 3：启动技能（解锁后开工组合，docs/phase3-startup-skill.md）
+    enable_startup: bool = True
+    startup_window_s: float = 900.0        # 节律观察窗（解锁后 N 秒内的启动集合）
+    startup_min_samples: int = 5           # 最少解锁样本才生成组合草稿
+    startup_member_rate_floor: float = 0.4 # 成员出现率淘汰线（衰减淘汰）
+    startup_suggest_delay_s: float = 90.0  # 解锁后等 N 秒再开口（等你开首波）
+    startup_silence_ratio: float = 0.6     # 手动开 ≥ 此比例 → 沉默记 missed_need
+
     @classmethod
     def load(cls, path: str | None = None, overrides: dict | None = None) -> "Config":
         cfg = cls()

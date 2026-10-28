@@ -44,6 +44,37 @@ def parse_calibrate_uri(uri: str) -> dict | None:
         return None
 
 
+STARTUP_OPS = ("launch", "dismiss", "auto")
+
+
+def startup_uri(op: str, pref_id: int, action_id: int | None = None) -> str:
+    """启动技能建议按钮的回传 URI（拉起/不用/以后自动）。"""
+    uri = f"{SCHEME}:action?skill=startup&op={op}&pref={pref_id}"
+    if action_id is not None:
+        uri += f"&action={action_id}"
+    return uri
+
+
+def parse_action_uri(uri: str) -> dict | None:
+    """knowbot:action?skill=startup&op=launch&pref=5&action=9 → dict。"""
+    try:
+        rest = uri.split(":", 1)[1]
+        if rest.startswith("//"):
+            rest = rest[2:]
+        _, _, query = rest.partition("?")
+        q = parse_qs(query)
+        if q["skill"][0] != "startup":
+            return None
+        op = q["op"][0]
+        pref = int(q["pref"][0])
+        action = int(q["action"][0]) if q.get("action") else None
+        if op not in STARTUP_OPS or pref <= 0:
+            return None
+        return {"op": op, "pref": pref, "action": action}
+    except Exception:
+        return None
+
+
 def ensure_protocol_handler(db_path: str) -> bool:
     """幂等注册 knowbot: 协议到 HKCU（仅 Windows；失败由调用方降级为无按钮）。"""
     if sys.platform != "win32":

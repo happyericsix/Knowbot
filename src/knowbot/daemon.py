@@ -94,6 +94,8 @@ async def run(config: Config, duration: float = 0.0) -> dict:
     panel = None
     volume_executor = None
     prearm_ledger = None
+    rhythm = None
+    startup_skill = None
     if config.enable_volume_skill or config.enable_panel:
         from .attribution.volume import VolumeAttributionParams
         from .executors.volume import VolumeExecutor
@@ -103,26 +105,43 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         seed_defaults(memory)
         volume_executor = VolumeExecutor()
 
+        notifier = None
+        if config.enable_toast:
+            from .notify.toast import ensure_appid, toast as _toast
+            ensure_appid()  # 未注册 AUMID 的 toast 静默不显示（真机实测坑）
+            notifier = _toast
+            try:  # toast 按钮的回传通道；失败仅降级为无按钮 toast
+                from .notify.protocol import ensure_protocol_handler
+                ensure_protocol_handler(config.db_path)
+            except Exception:
+                log.warning("knowbot: 协议注册失败（按钮回传不可用）", exc_info=True)
+
         if config.enable_prearm:
             # 反射层动作的台账落账（哲学 7：台账不可豁免）
             from .skills.prearm import PrearmLedger
             prearm_ledger = PrearmLedger(bus, memory)
             prearm_ledger.start(loop)
 
+        if config.enable_startup:
+            # Phase 3：节律观察层（纯观察零动作）+ 启动技能（建议档起步）
+            from .learning.rhythm import RhythmObserver
+            from .skills.startup import StartupParams, StartupSkill
+            rhythm = RhythmObserver(
+                bus, memory, window_s=config.startup_window_s,
+                min_samples=config.startup_min_samples,
+                rate_floor=config.startup_member_rate_floor)
+            rhythm.start(loop)
+            from .executors.launch import LaunchExecutor
+            startup_skill = StartupSkill(
+                bus, memory, LaunchExecutor(), notifier=notifier,
+                params=StartupParams(
+                    suggest_delay_s=config.startup_suggest_delay_s,
+                    silence_ratio=config.startup_silence_ratio))
+            startup_skill.start(loop)
+
     if config.enable_volume_skill:
         from .learning.learner import VolumeLearner
         from .skills.volume import VolumeSkill
-
-        notifier = None
-        if config.enable_toast:
-            from .notify.toast import ensure_appid, toast as _toast
-            ensure_appid()  # 未注册 AUMID 的 toast 静默不显示（真机实测坑）
-            notifier = _toast
-            try:  # toast 三键按钮的回传通道；失败仅降级为无按钮 toast
-                from .notify.protocol import ensure_protocol_handler
-                ensure_protocol_handler(config.db_path)
-            except Exception:
-                log.warning("knowbot: 协议注册失败（校准按钮不可用）", exc_info=True)
 
         # 电平采样：A2 归因"内容是否在放"的证据源。缺了它 A2/A4 会退化成
         # A1/A3 重罚（战报 #11：装配 omission，测试注入 FakeMeter 掩盖）。
@@ -196,6 +215,10 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         aggregation.stop()
     if skill is not None:
         skill.stop()
+    if startup_skill is not None:
+        startup_skill.stop()
+    if rhythm is not None:
+        rhythm.stop()
     if prearm_ledger is not None:
         prearm_ledger.stop()
     if panel is not None:

@@ -52,3 +52,12 @@ volume_skill_dry_run = true
 # 计算礼貌（哲学 9）：影子决策 toast 节流——决策照常落台账，只压制通知
 shadow_toast_cooldown_s = 600.0   # 同设备冷却（秒）
 shadow_toast_daily = 30           # 全局日预算（条）
+
+# Phase 3：启动技能（解锁后开工组合，docs/phase3-startup-skill.md）
+# 爬升：观察层永远在跑 → 组合草稿(面板确认) → 建议档 → 自动拉起(explicit+missed≥3)
+enable_startup = true
+startup_window_s = 900.0        # 节律观察窗（解锁后 N 秒内的启动集合）
+startup_min_samples = 5         # 最少解锁样本才生成组合草稿（宁可不学不可学错）
+startup_member_rate_floor = 0.4 # 成员出现率淘汰线（衰减淘汰）
+startup_suggest_delay_s = 90.0  # 解锁后等 N 秒再开口（等你开首波程序）
+startup_silence_ratio = 0.6     # 手动开 ≥ 此比例 → 沉默记 missed_need（不弹）

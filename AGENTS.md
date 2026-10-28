@@ -65,10 +65,10 @@ src/knowbot/
 ├── aggregation/     audio.py：爆发折叠+协同churn指纹（audio.flow 命名空间）
 ├── attribution/     volume.py：归因决策表纯函数（A1-A5/N1-N3/B/C 规则编号）
 ├── store/           db.py（event_raw+批量落库）/ memory.py（五表操作面+溯源反查）
-├── executors/       volume.py（含 AGENT_CONTEXT_GUID：agent写的身份标识）
-├── skills/          volume.py：首个 Skill 完整闭环（dry-run 影子运行中）
-├── learning/        learner.py：Verdict → 棘轮/证据/锚点/草稿；apply_calibration 三键校准
-├── notify/          toast.py（PowerShell WinRT，支持按钮）/ protocol.py（knowbot: URI 回传）
+├── executors/       volume.py（AGENT_CONTEXT_GUID）/ launch.py（白名单+防重复+undo）
+├── skills/          volume.py（真执行中）/ prearm.py（台账）/ startup.py（建议档）
+├── learning/        learner.py：Verdict+三键校准 / rhythm.py：节律观察层
+├── notify/          toast.py（WinRT，带按钮）/ protocol.py（knowbot: URI 回传）
 └── panel/           server.py + static/：概览(周FA率)/偏好/台账/事件流 + 校准/确认/撤销/暂停
 docs/                A1 DDL / A2 归因 / A3 聚合 / 设计修订登记 / 场景目录37例 / 进度报告
 tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
@@ -84,10 +84,13 @@ tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
 - 三键校准闭环、周窗 FA 仪表、台账溯源全部在线
 - **trickle 启动**：空闲传感器上线（system.idle：idle_begin/end，Phase 3
   节律记忆的原料）；代码已同步 GitHub（ssh over 443）
-- **Phase 3 入场券已成稿**（docs/phase3-startup-skill.md）：启动技能 v1 =
-  解锁后开工组合助手，建议档起步；零新表零新传感器（节律住在记忆里）；
-  S1-S7 归因草案；待用户过目后实施（RhythmObserver 可先行）
-- 下一步：真执行期的 A 归因积累 → FA 仪表读数 → 启动技能实施 → WiFi 传感器
+- **Phase 3 实施上线（10-28 深夜）**：RhythmObserver（节律观察，零动作）+
+  StartupSkill（S1-S7/SN 全规则，建议档起步）+ LaunchExecutor（白名单：
+  App Paths→开始菜单 target→PATH；防重复；undo=关自拉实例）+
+  knowbot:action 协议回传。组合草稿需 5 个解锁样本 + 面板确认才到建议档；
+  自动拉起需 explicit + missed_need≥3
+- 下一步：真执行期的 A 归因积累 → FA 仪表读数 → 节律草稿生长（约一周）
+  → 用户面板确认组合 → 建议档首秀
 - 详见 docs/phase-progress.md（进度）与 docs/design-amendments.md（与方案v0.1的偏差）
 
 ## 与本项目的 agent 对话时

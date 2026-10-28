@@ -110,6 +110,44 @@ def _cmd_calibrate(args) -> None:
     raise SystemExit(0 if result.get("ok") else 1)
 
 
+def _cmd_action(args) -> None:
+    """toast 动作按钮的回传落点（启动技能：拉起/不用/以后自动）。"""
+    import sqlite3
+    import time
+    from pathlib import Path
+
+    from .notify.protocol import parse_action_uri
+    from .skills.startup import apply_startup_action
+    from .store.memory import MemoryStore
+
+    params = parse_action_uri(args.uri)
+    if params is None or params.get("skill", "startup") != "startup":
+        print(f"非法动作 URI: {args.uri}", file=sys.stderr)
+        raise SystemExit(2)
+    db = args.db or Config.load(args.config).db_path
+    result = {"ok": False, "error": "unreachable"}
+    try:
+        conn = sqlite3.connect(db, timeout=5)
+        conn.row_factory = sqlite3.Row
+        try:
+            from .executors.launch import LaunchExecutor
+            result = apply_startup_action(
+                MemoryStore(conn), LaunchExecutor(), params["op"],
+                params["pref"], params["action"], via="toast")
+        finally:
+            conn.close()
+    except Exception as e:
+        result = {"ok": False, "error": repr(e)}
+    try:  # pythonw 无控制台：留痕供诊断
+        with open(Path(db).parent / "action.log", "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {args.uri} -> "
+                    f"{json.dumps(result, ensure_ascii=False)}\n")
+    except Exception:
+        pass
+    print(json.dumps(result, ensure_ascii=False))
+    raise SystemExit(0 if result.get("ok") else 1)
+
+
 def _cmd_install_protocol(args) -> None:
     from .notify.protocol import ensure_protocol_handler
     from .notify.toast import ensure_appid
@@ -167,6 +205,12 @@ def main(argv=None) -> None:
     p.add_argument("--config", default=None)
     p.add_argument("--db", default=None, help="覆盖数据库路径（协议注册时写入）")
     p.set_defaults(func=_cmd_calibrate)
+
+    p = sub.add_parser("action", help="toast 动作按钮回传（启动技能拉起/不用/自动）")
+    p.add_argument("uri", help="knowbot:action?skill=startup&op=launch&pref=5")
+    p.add_argument("--config", default=None)
+    p.add_argument("--db", default=None)
+    p.set_defaults(func=_cmd_action)
 
     p = sub.add_parser("install-protocol", help="注册 knowbot: URI 协议（toast 按钮回传）")
     p.add_argument("--config", default=None)
