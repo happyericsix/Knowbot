@@ -522,3 +522,35 @@ def test_stale_trigger_for_departed_default_skipped(tmp_path):
         store.close()
 
     asyncio.run(main())
+
+
+def test_c_window_learns_final_value_with_trailing_finalize(tmp_path):
+    """C 窗尾随定案（2026-10-28）：用户微调持续覆盖（末值学习），调完静默
+    c_trailing_s 即收尾——不再等满 60s 窗，草稿取最终值而非首次粗调值。"""
+    async def main():
+        from knowbot.attribution.volume import VolumeAttributionParams as VAP
+        p = VAP(watch_window_s=2.0, c_window_s=2.0, c_trailing_s=0.3,
+                strong_band_s=2.0, normal_band_s=10.0)
+        store, memory = _setup(tmp_path)
+        bus = EventBus(); bus.bind(asyncio.get_running_loop())
+        skill = VolumeSkill(bus, memory, VolumeLearner(memory), FakeExecutor(),
+                            p, dry_run=True, meter_factory=None)
+        skill.start(asyncio.get_running_loop())
+        # 0.05 触发开 C 窗（窗 2.0s）；0.2 调到 0.5；0.5 微调到 0.35（末值）
+        # → early_at = 0.5+0.3 = 0.8 < 窗尾 2.05，提前定案
+        # handset 无类级先验 → 落到 global(0.30) < 建议档 → 无信念 C 窗
+        await _drive(bus, skill, [(0.05, settled_event(ff="handset")),
+                                  (0.20, user_adjust(0.50, frm=0.25)),
+                                  (0.50, user_adjust(0.35, frm=0.50))],
+                     settle=1.2)
+        skill.stop()
+
+        draft = memory.get("audio.volume", "instance", INST)
+        assert draft is not None and draft["state"] == "draft"
+        assert json.loads(draft["value"])["scalar"] == 0.35   # 末值，非首次 0.50
+        row = memory.conn.execute(
+            "SELECT reaction FROM action_log ORDER BY id DESC").fetchone()
+        assert row["reaction"] == "missed_need"
+        store.close()
+
+    asyncio.run(main())

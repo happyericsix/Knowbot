@@ -17,6 +17,8 @@ class VolumeAttributionParams:
     strong_band_s: float = 2.0             # 强证据带：规则原始强度
     normal_band_s: float = 10.0            # 正常带：硬规则降为 soft
     c_window_s: float = 60.0               # 场景 C（missed_need）学习窗
+    c_trailing_s: float = 10.0             # C 窗尾随安静期：用户调完静默即定案
+                                           # （末值学习；2026-10-28 由"等满窗"改尾随去抖）
     settle_s: float = 1.5                   # 观察层去抖用；此处仅透传约定
     mag_floor: float = 0.03                 # 响度域幅度噪声底线
     meter_active_frac: float = 0.30         # active_frac ≥ 此值 = 内容在放

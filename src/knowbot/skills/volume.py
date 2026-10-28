@@ -100,7 +100,8 @@ class VolumeSkill:
             await asyncio.sleep(0.25)
             now = time.monotonic()
             for dev, w in list(self._watches.items()):
-                if now >= w.expires_at:
+                due = now >= w.expires_at or (w.early_at is not None and now >= w.early_at)
+                if due:
                     del self._watches[dev]
                     try:
                         self._finalize(w)
@@ -254,8 +255,13 @@ class VolumeSkill:
 
         agent = AgentAction(exec_mode=effective_mode, from_loudness=before,
                             target_loudness=target)
+        # 窗口时长按语义取：真执行看归因主窗（accept 语义需等满窗）；
+        # 影子/建议没改任何东西，纯学习窗用 c_window（晚调也是学习机会）
+        real_exec = effective_mode in ("silent", "notify")
         self._open_watch(device_id, inst_key, class_key, action_id, pref["id"],
-                         action_ts, agent=agent, window_s=self._p.watch_window_s,
+                         action_ts, agent=agent,
+                         window_s=(self._p.watch_window_s if real_exec
+                                   else self._p.c_window_s),
                          trigger=trigger)
         log.info("音量技能出手：device=%s mode=%s target=%s", device_id[-12:],
                  effective_mode, target)
@@ -269,14 +275,23 @@ class VolumeSkill:
         if p.get("actor") != "user" or p.get("knob") != "master":
             return  # 只关心用户对 master 的调整（agent 自己的写不构成纠正）
         w = self._watches.get(p.get("device_id"))
-        if w is not None and w.adjustment is None:  # 只取窗口内第一次静止调整
-            w.adjustment = UserAdjustment(
-                delta_s=max(0.0, ev.ts_mono - w.action_ts_mono),
-                knob="master",
-                from_loudness=p.get("from"),
-                to_loudness=p.get("scalar", 0.0),
-                burst_count=p.get("burst", 1),
-            )
+        if w is None:
+            return
+        # 真执行（silent/notify）：A2 文档规则，窗口内首次纠正即定方向/幅度；
+        # 非真执行（dry_run/suggest/none）：纯学习窗——末值学习（微调持续覆盖），
+        # 调完静默 c_trailing_s 即提前定案（2026-10-28：不再等满窗才弹草稿）
+        real_exec = w.agent is not None and w.agent.exec_mode in ("silent", "notify")
+        if real_exec and w.adjustment is not None:
+            return
+        w.adjustment = UserAdjustment(
+            delta_s=max(0.0, ev.ts_mono - w.action_ts_mono),
+            knob="master",
+            from_loudness=p.get("from"),
+            to_loudness=p.get("scalar", 0.0),
+            burst_count=p.get("burst", 1),
+        )
+        if not real_exec:
+            w.early_at = ev.ts_mono + self._p.c_trailing_s
 
     def _open_watch(self, device_id, inst_key, class_key, action_id, pref_id,
                     action_ts, agent, window_s, trigger=None) -> None:
@@ -359,7 +374,8 @@ class VolumeSkill:
 
 class _Watch:
     """单个设备的观察窗口（执行后 A 窗 / 无信念 C 窗）。
-    trigger=(sensor, type, device_id, ts_mono)：finalize 时反查 event_raw.id。"""
+    trigger=(sensor, type, device_id, ts_mono)：finalize 时反查 event_raw.id。
+    early_at：C 窗尾随定案时刻（用户调完静默 c_trailing_s 即收尾，末值学习）。"""
 
     def __init__(self, device_id, inst_key, class_key, action_id, pref_id,
                  action_ts_mono, agent, expires_at, sampler=None, trigger=None):
@@ -373,4 +389,5 @@ class _Watch:
         self.expires_at = expires_at
         self.sampler = sampler
         self.trigger = trigger
+        self.early_at = None
         self.adjustment: UserAdjustment | None = None
