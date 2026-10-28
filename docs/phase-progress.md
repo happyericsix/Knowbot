@@ -42,6 +42,7 @@
 | 8 | 音量事件缺 from 值 | 首个静止值无前值 | 传感器记录前一静止值；归因 N1 对无 from 跳过 |
 | 9 | **toast"发送成功"但屏幕上什么都不显示** | 未注册 AUMID 的 Win32 程序调 toast Show() 不抛错但静默丢弃（PowerShell exit 0 是假阳性） | HKCU 注册 AppUserModelId（BurntToast 同款），daemon 启动幂等注册 |
 | 10 | ZG2 麦克风（capture 端点）误触音量技能 | 触发放宽时只排除 hdmi/远程，漏了 capture；state_changed 元信息不带 flow | form_factor=microphone / flow=capture / MMDevice ID 前缀 `{0.0.1.` 三重排除（§13 附注） |
+| 11 | **真执行路径 A2/A4 归因恒退化成 A1/A3 重罚** | daemon 装配漏传 meter_factory，观察窗永远无电平数据（测试注入 FakeMeter 恰好掩盖 omission） | 装配补上 MeterSampler 工厂（真机验证采样正常） |
 
 **战报的价值**：#7 是整个项目至今最重要的 bug——它证明了"传感器静默死亡"
 不是理论风险，也催生了线程心跳（system.sensor/tick）这类可观测性基建。

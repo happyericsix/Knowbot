@@ -123,10 +123,17 @@ async def run(config: Config, duration: float = 0.0) -> dict:
                 ensure_protocol_handler(config.db_path)
             except Exception:
                 log.warning("knowbot: 协议注册失败（校准按钮不可用）", exc_info=True)
+
+        # 电平采样：A2 归因"内容是否在放"的证据源。缺了它 A2/A4 会退化成
+        # A1/A3 重罚（战报 #11：装配 omission，测试注入 FakeMeter 掩盖）。
+        def _meter_factory(device_id):
+            from .sensors.meter import MeterSampler
+            return MeterSampler(volume_executor._ensure, device_id)
+
         skill = VolumeSkill(
             bus, memory, VolumeLearner(memory), volume_executor,
             VolumeAttributionParams(), dry_run=config.volume_skill_dry_run,
-            notifier=notifier,
+            notifier=notifier, meter_factory=_meter_factory,
             toast_cooldown_s=config.shadow_toast_cooldown_s,
             toast_daily=config.shadow_toast_daily)
         skill.start(loop)
