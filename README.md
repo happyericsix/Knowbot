@@ -46,6 +46,7 @@ python -m venv .venv
 [音量归因决策表](docs/phase1-volume-attribution.md) ·
 [事件聚合层](docs/phase1-event-aggregation.md) ·
 [设计修订登记](docs/design-amendments.md)（方案 v0.1 与实施现实的偏差） ·
+[Phase 3 启动技能入场券](docs/phase3-startup-skill.md) ·
 [场景目录 37 例](docs/scenario-catalog.md) ·
 [进度报告](docs/phase-progress.md)
 

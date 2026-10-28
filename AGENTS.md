@@ -84,7 +84,10 @@ tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
 - 三键校准闭环、周窗 FA 仪表、台账溯源全部在线
 - **trickle 启动**：空闲传感器上线（system.idle：idle_begin/end，Phase 3
   节律记忆的原料）；代码已同步 GitHub（ssh over 443）
-- 下一步：真执行期的 A 归因积累 → FA 仪表读数 → WiFi 传感器 → Phase 3
+- **Phase 3 入场券已成稿**（docs/phase3-startup-skill.md）：启动技能 v1 =
+  解锁后开工组合助手，建议档起步；零新表零新传感器（节律住在记忆里）；
+  S1-S7 归因草案；待用户过目后实施（RhythmObserver 可先行）
+- 下一步：真执行期的 A 归因积累 → FA 仪表读数 → 启动技能实施 → WiFi 传感器
 - 详见 docs/phase-progress.md（进度）与 docs/design-amendments.md（与方案v0.1的偏差）
 
 ## 与本项目的 agent 对话时
