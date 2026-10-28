@@ -71,13 +71,24 @@ class VolumeSkill:
         self._watches: dict[str, _Watch] = {}
         self._last_trigger: dict[str, float] = {}  # device_id → 触发时刻（去重）
         self._pending: dict[str, Event] = {}   # 观察窗占用期被挡的触发（停轮后补决策）
-        self._last_default_mm: str | None = None  # 当前停留的 render/multimedia 默认输出
+        self._current_default: str | None = None  # 原始 default_changed 维护的当前默认（毫秒级真相）
         self._task: asyncio.Task | None = None
 
     def start(self, loop) -> None:
         self._bus.subscribe("audio.flow", self._on_flow)
         self._bus.subscribe("audio.volume", self._on_volume)
+        self._bus.subscribe("audio.device", self._on_raw_default)
         self._task = loop.create_task(self._run_expiry(), name="skill-volume")
+
+    def _on_raw_default(self, ev: Event) -> None:
+        """原始 default_changed：维护"当前默认听音输出"的毫秒级真相。
+        折叠事件滞后 1s+，用它做时效校验会放行过期决策（2026-10-27 实测：
+        切走后 toast 仍在说旧设备）。"""
+        if ev.type != "default_changed":
+            return
+        p = ev.payload
+        if p.get("flow") == "render" and p.get("role") == "multimedia" and p.get("device_id"):
+            self._current_default = p["device_id"]
 
     def stop(self) -> None:
         if self._task is not None:
@@ -100,7 +111,8 @@ class VolumeSkill:
             for dev, ev in list(self._pending.items()):
                 if dev in self._watches:
                     continue
-                if dev != self._last_default_mm:
+                if (self._current_default is not None
+                        and dev != self._current_default):
                     del self._pending[dev]  # 你已停在别处：过期意图作废
                     continue
                 del self._pending[dev]
@@ -129,9 +141,6 @@ class VolumeSkill:
             # 路径二：手动切换默认输出（设备已激活、只换了指向——意图等价）。
             # 此路不受 churn 标记影响（显示器风暴不改默认输出的实测依据）。
             p = ev.payload
-            if (p.get("flow") == "render" and p.get("role") == "multimedia"
-                    and p.get("device_id")):
-                self._last_default_mm = p["device_id"]  # 记录停留输出（补决策判据）
             ff = p.get("form_factor")
             if (p.get("flow") != "render" or p.get("role") != "multimedia"
                     or not p.get("device_id")
@@ -154,6 +163,12 @@ class VolumeSkill:
             return
         p = ev.payload
         device_id = p["device_id"]
+        # 时效校验：触发折叠有 ~1s 滞后，决策瞬间若默认输出已再换，
+        # 这是一次过期触发——静默作废（对停留意图决策，不对过期动作反应）。
+        if (self._current_default is not None
+                and device_id != self._current_default):
+            log.info("触发过期（当前默认已换），跳过 device=%s", device_id[-12:])
+            return
         if device_id in self._watches:
             self._pending[device_id] = ev  # 观察窗占用中：停轮后由 expiry 补最终决策
             return

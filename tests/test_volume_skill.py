@@ -487,3 +487,38 @@ def test_shadow_toast_daily_budget(tmp_path):
         store.close()
 
     asyncio.run(main())
+
+
+def test_stale_trigger_for_departed_default_skipped(tmp_path):
+    """时效校验：切走后到达的旧设备决策作废——只有当前默认输出得到决策。
+    （2026-10-27 实测竞态：切到新设备后，toast 仍在说旧设备。）"""
+    async def main():
+        store, memory = _setup(tmp_path)
+        bus = EventBus(); bus.bind(asyncio.get_running_loop())
+        rec = _Recorder()
+        skill = VolumeSkill(bus, memory, VolumeLearner(memory), FakeExecutor(), P,
+                            dry_run=True, meter_factory=None, notifier=rec)
+        skill.start(asyncio.get_running_loop())
+
+        dev_b = "{dev-b}"
+        raw = lambda d: Event("audio.device", "default_changed",
+                              {"device_id": d, "flow": "render", "role": "multimedia"})
+        flow = lambda d: Event("audio.flow", "default_output", {
+            "device_id": d, "flow": "render", "role": "multimedia",
+            "form_factor": "speakers", "repeats": 1})
+        # 0.05 切到 B；0.15 B 折叠定案 → 决策 B
+        # 0.55 切回 A（真相更新）；0.60 折叠层滞后吐出 B 的旧窗口 → 必须作废
+        # 0.70 A 折叠定案 → 决策 A
+        await _drive(bus, skill, [
+            (0.05, raw(dev_b)), (0.15, flow(dev_b)),
+            (0.55, raw(DEV)), (0.60, flow(dev_b)), (0.70, flow(DEV)),
+        ], settle=0.5)
+        skill.stop()
+
+        rows = memory.conn.execute("SELECT action FROM action_log ORDER BY id").fetchall()
+        devs = [json.loads(r["action"])["device_id"] for r in rows]
+        assert devs == [dev_b, DEV]          # 过期的 B 没有第二次决策
+        assert len(rec.calls) == 2           # 也没有第二次提示
+        store.close()
+
+    asyncio.run(main())
