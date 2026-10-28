@@ -84,9 +84,9 @@ async def _drive(bus, skill, script, settle=0.6):
     import time as _t
     runner = asyncio.create_task(bus.run())
     t0 = _t.monotonic()
-    for delay, ev in script:
+    for delay, item in script:
         await asyncio.sleep(max(0.0, delay - (_t.monotonic() - t0)))
-        bus.publish(ev)
+        bus.publish(item() if callable(item) else item)
     await asyncio.sleep(settle)
     runner.cancel()
     await asyncio.gather(runner, return_exceptions=True)
@@ -529,7 +529,7 @@ def test_c_window_learns_final_value_with_trailing_finalize(tmp_path):
     c_trailing_s 即收尾——不再等满 60s 窗，草稿取最终值而非首次粗调值。"""
     async def main():
         from knowbot.attribution.volume import VolumeAttributionParams as VAP
-        p = VAP(watch_window_s=2.0, c_window_s=2.0, c_trailing_s=0.3,
+        p = VAP(watch_window_s=2.0, c_window_s=2.0, c_trailing_s=0.4,
                 strong_band_s=2.0, normal_band_s=10.0)
         store, memory = _setup(tmp_path)
         bus = EventBus(); bus.bind(asyncio.get_running_loop())
@@ -539,10 +539,11 @@ def test_c_window_learns_final_value_with_trailing_finalize(tmp_path):
         # 0.05 触发开 C 窗（窗 2.0s）；0.2 调到 0.5；0.5 微调到 0.35（末值）
         # → early_at = 0.5+0.3 = 0.8 < 窗尾 2.05，提前定案
         # handset 无类级先验 → 落到 global(0.30) < 建议档 → 无信念 C 窗
-        await _drive(bus, skill, [(0.05, settled_event(ff="handset")),
-                                  (0.20, user_adjust(0.50, frm=0.25)),
-                                  (0.50, user_adjust(0.35, frm=0.50))],
-                     settle=1.2)
+        await _drive(bus, skill, [
+            (0.05, settled_event(ff="handset")),
+            (0.20, lambda: user_adjust(0.50, frm=0.25)),
+            (0.50, lambda: user_adjust(0.35, frm=0.50))],
+            settle=1.2)
         skill.stop()
 
         draft = memory.get("audio.volume", "instance", INST)

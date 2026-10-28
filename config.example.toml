@@ -19,6 +19,11 @@ flush_interval = 0.5
 enable_audio = true
 enable_winmsg = true
 
+# 空闲传感器（trickle 第一件）：只有"多久没碰键鼠"一个数字，永不接触内容
+enable_idle = true
+idle_threshold_s = 300.0   # 空闲越过阈值 → idle_begin（默认 5 分钟）
+idle_poll_s = 10.0         # 轮询周期（单次轻量 API 调用）
+
 # 聚合层（A3）：把传感器爆发折叠成语义事件（audio.flow 命名空间）
 # churn_flips/co_devices 双阈值：单设备翻转多，或多端点协同翻转，都判不稳定
 enable_aggregation = true

@@ -27,6 +27,7 @@ class Sensor:
     SENSOR_STATUS = "system.sensor"
     POWER = "system.power"
     SESSION = "system.session"
+    IDLE = "system.idle"
     AUDIO = "audio.device"
     FOREGROUND = "app.foreground"
     USB = "device.usb"

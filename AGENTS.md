@@ -61,7 +61,7 @@ src/knowbot/
 ├── envelope.py      事件信封（seq+双时间戳+命名空间+payload）
 ├── bus.py           有界队列总线（满即丢弃计数，绝不反压）
 ├── daemon.py        装配+优雅退出+协议注册
-├── sensors/         心跳 / audio_device(COM STA) / winmsg(消息窗口三合一) / meter
+├── sensors/         心跳 / audio_device(COM STA) / winmsg(消息窗口三合一) / meter / idle
 ├── aggregation/     audio.py：爆发折叠+协同churn指纹（audio.flow 命名空间）
 ├── attribution/     volume.py：归因决策表纯函数（A1-A5/N1-N3/B/C 规则编号）
 ├── store/           db.py（event_raw+批量落库）/ memory.py（五表操作面+溯源反查）
@@ -74,7 +74,7 @@ docs/                A1 DDL / A2 归因 / A3 聚合 / 设计修订登记 / 场�
 tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
 ```
 
-## 当前状态（2026-10-28 晚）
+## 当前状态（2026-10-28 深夜）
 
 - Phase 0 ✅；入场券 A1/A2/A3 ✅；Phase 1 ①②③ ✅
 - **音量技能已真执行（dry-run 关闭，§18）**：当前唯一真调音量的是 ZG2
@@ -82,8 +82,9 @@ tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
 - pre-arm 真执行中（10-27 起，台账化+暂停覆盖+冷却，§15/§16）
 - 交互层六轮真机打磨闭环（§13 触发范围/§14 时效+补决策/§17 学习窗尾随）
 - 三键校准闭环、周窗 FA 仪表、台账溯源全部在线
-- 下一步：真执行期的 A 归因积累（accept/correct/锚点）→ FA 仪表读数 →
-  信任扩展（更多设备 explicit 确认）→ trickle 传感器 → Phase 3 启动技能
+- **trickle 启动**：空闲传感器上线（system.idle：idle_begin/end，Phase 3
+  节律记忆的原料）；代码已同步 GitHub（ssh over 443）
+- 下一步：真执行期的 A 归因积累 → FA 仪表读数 → WiFi 传感器 → Phase 3
 - 详见 docs/phase-progress.md（进度）与 docs/design-amendments.md（与方案v0.1的偏差）
 
 ## 与本项目的 agent 对话时

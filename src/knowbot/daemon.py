@@ -20,6 +20,7 @@ from .store.db import EventStore
 from .sensors.audio_device import AudioDeviceSensor
 from .sensors.base import Sensor
 from .sensors.heartbeat import HeartbeatSensor
+from .sensors.idle import IdleSensor
 from .sensors.winmsg import Win32MessageSensor
 
 log = logging.getLogger(__name__)
@@ -43,6 +44,9 @@ async def run(config: Config, duration: float = 0.0) -> dict:
             log.exception("传感器启动失败：%s", sensor.name)
 
     add(HeartbeatSensor(bus, period=config.heartbeat_period))
+    if config.enable_idle:
+        add(IdleSensor(bus, threshold_s=config.idle_threshold_s,
+                       poll_s=config.idle_poll_s))
     if config.enable_audio:
         # pre-arm 的全局暂停探针：STA 线程调用，须用独立只读连接
         # （不与 store 共享连接，避免跨线程竞争；默认切换是稀有事件）

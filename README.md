@@ -35,6 +35,7 @@ python -m venv .venv
 | 命名空间 | 内容 | 线程 |
 |---|---|---|
 | `system.heartbeat` | 每 60s 一拍：存活证明 + 缺口探测 | asyncio 任务 |
+| `system.idle` | 空闲转换（越过 5 分钟阈值 → `idle_begin`，恢复 → `idle_end` 带时长） | asyncio 任务（GetLastInputInfo 轮询） |
 | `audio.device` | 端点插拔/默认设备切换/启动快照（id、友好名、form factor、流向、角色） | 独立 STA 线程（COM 回调） |
 | `app.foreground` | 前台应用切换（仅 exe 名 + pid） | 消息泵线程（WinEventHook） |
 | `system.power` / `system.session` | 睡眠/唤醒、锁屏/解锁（含 `clock_reconcile` 时钟对账） | 同一消息泵线程（隐藏窗口） |

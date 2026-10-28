@@ -24,6 +24,11 @@ class Config:
     enable_audio: bool = True
     enable_winmsg: bool = True
 
+    # 空闲传感器（trickle 第一件）：GetLastInputInfo 轮询，只有数字无内容
+    enable_idle: bool = True
+    idle_threshold_s: float = 300.0   # 空闲越过阈值 → idle_begin（默认 5 分钟）
+    idle_poll_s: float = 10.0         # 轮询周期（单次轻量 API 调用）
+
     # 聚合层（A3）：爆发折叠为语义事件（audio.flow 命名空间）
     enable_aggregation: bool = True
     # 折叠安静期：切换/插拔后安静这么久即定案。实测角色突发在 ~300ms 内
