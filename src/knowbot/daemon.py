@@ -123,13 +123,15 @@ async def run(config: Config, duration: float = 0.0) -> dict:
             prearm_ledger.start(loop)
 
         if config.enable_startup:
-            # Phase 3：节律观察层（纯观察零动作）+ 启动技能（建议档起步）
-            from .learning.rhythm import RhythmObserver
+            # Phase 3：节律观察层（纯采集，修订 §19）+ 启动技能（建议档起步）。
+            # 分析器为占位统计策略（跑通流程用），研究层 agent 就绪后替换。
+            from .learning.rhythm import RhythmObserver, StatsDraftAnalyzer
             from .skills.startup import StartupParams, StartupSkill
             rhythm = RhythmObserver(
                 bus, memory, window_s=config.startup_window_s,
-                min_samples=config.startup_min_samples,
-                rate_floor=config.startup_member_rate_floor)
+                analyzer=StatsDraftAnalyzer(
+                    memory, min_samples=config.startup_min_samples,
+                    rate_floor=config.startup_member_rate_floor))
             rhythm.start(loop)
             from .executors.launch import LaunchExecutor
             startup_skill = StartupSkill(

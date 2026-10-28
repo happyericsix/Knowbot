@@ -1,10 +1,9 @@
-"""节律观察层（Phase 3 入场券 §5）：解锁 → 观察窗 → 窗口 exe 集合 → 滚动
-统计 → 开工组合草稿。
+"""节律观察层（Phase 3 入场券 §5 + 修订 §19）。
 
-纪律：观察永远在跑，零通知零动作（计算礼貌）；组合在
-preference(startup.launch_set, schedule:weekday|weekend) 以 draft 状态
-生长（置信 <0.5，永远到不了建议档，直到用户在面板确认）；
-每次解锁一条 evidence（detail 携带窗口 exe 快照与分桶，可重算可回放）。
+职责边界（2026-10-28 用户裁决）：**观察层只采集，不做分析**——
+窗口收集 + evidence 落库 + 空壳信念容器；节律的定性归纳归研究层
+agent（结构化进/结构化出）。StatsDraftAnalyzer 是占位策略，仅为
+跑通全流程，研究层就绪后整体替换（读同一 evidence 流）。
 """
 from __future__ import annotations
 
@@ -33,18 +32,21 @@ def schedule_bucket(ts_wall: str) -> str:
 
 
 class RhythmObserver:
+    """纯采集：解锁 → 观察窗 → 窗口 exe 集合 → evidence 落库。
+
+    零通知零动作；分析（若注入 analyzer）在窗口收尾后调用——
+    分析器可插拔，占位实现见 StatsDraftAnalyzer。
+    """
+
     name = "startup.observer"
 
     def __init__(self, bus: EventBus, memory: MemoryStore,
-                 window_s: float = 900.0, min_samples: int = 5,
-                 rate_floor: float = 0.4, max_members: int = 8,
+                 window_s: float = 900.0, analyzer=None,
                  poll_s: float = 1.0) -> None:
         self._bus = bus
         self._m = memory
         self._window_s = window_s
-        self._min_samples = min_samples
-        self._rate_floor = rate_floor
-        self._max_members = max_members
+        self._analyzer = analyzer
         self._poll_s = poll_s
         self._win: dict | None = None
         self._task: asyncio.Task | None = None
@@ -85,7 +87,7 @@ class RhythmObserver:
                 except Exception:
                     log.exception("节律窗口收尾失败")
 
-    # ---- 收尾：证据 + 滚动统计 ----
+    # ---- 收尾：证据落库（采集终点）；分析交给注入的 analyzer ----
 
     def _finalize(self, w: dict) -> None:
         bucket = schedule_bucket(w["wall"])
@@ -93,22 +95,45 @@ class RhythmObserver:
         unlock_id = self._m.find_event_id(
             "system.session", "session_unlock", None, w["start"],
             tol_s=self._window_s + 120.0)
-
-        # 组合壳在首个窗口即建（draft/0.30），成员要等样本量达标才写入
+        # 空壳信念 = 节律证据的容器（value 恒空，成员由分析器/研究层填写）
         pref = self._m.get_or_create(
-            PREF_KEY, "class", bucket, {"apps": []}, 0.30,
+            PREF_KEY, "class", bucket, {"apps": []}, 0.25,
             "observed", state="draft")
         self._m.insert_evidence(
             pref["id"], "event", unlock_id,
             {"bucket": bucket, "window_exes": sorted(w["exes"]),
              "hhmm": w["wall"][11:16]})
+        log.info("节律[%s] 窗口采集完成：%d 个程序（证据 #%s）",
+                 bucket, len(w["exes"]), unlock_id)
+        if self._analyzer is not None:
+            try:
+                self._analyzer.analyze(pref["id"], bucket)
+            except Exception:
+                log.exception("节律分析器执行失败（占位策略不应影响采集）")
 
-        windows = self._windows_from_evidence(pref["id"], bucket)
-        if len(windows) < self._min_samples:
-            log.info("节律[%s] 样本 %d/%d，继续观察", bucket, len(windows),
-                     self._min_samples)
+
+class StatsDraftAnalyzer:
+    """【占位策略，修订 §19】定量统计生成组合草稿——仅为跑通全流程。
+
+    其产出（成员出现率/置信公式）是机械启发式，区分不了"自启动常驻"与
+    "刻意打开"，长期不可信；研究层 agent 就绪后整体替换本类（接口不变：
+    analyze(pref_id, bucket) 读同一 evidence 流，产出结构化结论）。
+    """
+
+    def __init__(self, memory: MemoryStore, min_samples: int = 5,
+                 rate_floor: float = 0.4, max_members: int = 8) -> None:
+        self._m = memory
+        self._min_samples = min_samples
+        self._rate_floor = rate_floor
+        self._max_members = max_members
+
+    def analyze(self, pref_id: int, bucket: str) -> None:
+        pref = self._m.get_pref(pref_id)
+        if pref is None:
             return
-
+        windows = self._windows_from_evidence(pref_id, bucket)
+        if len(windows) < self._min_samples:
+            return
         counts: Counter = Counter()
         for exes in windows:
             counts.update(exes)
@@ -117,13 +142,12 @@ class RhythmObserver:
                 for e, c in counts.most_common()
                 if c / n >= self._rate_floor][:self._max_members]
         value = dict(json.loads(pref["value"]))
-        # missed_count / dismiss_count / auto 是技能层的运行时标记，保留
         value["apps"] = apps
         # 置信随样本缓升但封顶 0.45：draft 永远到不了建议档（用户确认才升）
         conf = min(0.45, 0.30 + 0.015 * n)
-        self._m.update_preference(pref["id"], value=value, confidence=conf)
-        log.info("节律[%s] 组合更新：%d 窗口 %d 成员 %s", bucket, n, len(apps),
-                 [a["exe"] for a in apps[:4]])
+        self._m.update_preference(pref_id, value=value, confidence=conf)
+        log.info("节律[%s] 占位统计更新：%d 窗口 %d 成员 %s", bucket, n,
+                 len(apps), [a["exe"] for a in apps[:4]])
 
     def _windows_from_evidence(self, pref_id: int, bucket: str) -> list[set]:
         rows = self._m.conn.execute(
