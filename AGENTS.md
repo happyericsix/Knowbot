@@ -84,12 +84,13 @@ tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
 - 三键校准闭环、周窗 FA 仪表、台账溯源全部在线
 - **trickle 启动**：空闲传感器上线（system.idle：idle_begin/end，Phase 3
   节律记忆的原料）；代码已同步 GitHub（ssh over 443）
-- **Phase 3 实施上线（10-28 深夜）**：RhythmObserver（**纯采集**，修订 §19：
-  分析权归研究层 agent）+ StatsDraftAnalyzer（占位统计，仅跑通流程）+
-  StartupSkill（S1-S7/SN 全规则，建议档起步）+ LaunchExecutor（白名单：
-  App Paths→开始菜单 target→PATH；防重复；undo=关自拉实例）+
-  knowbot:action 协议回传。组合草稿需 5 个解锁样本 + 面板确认才到建议档；
-  自动拉起需 explicit + missed_need≥3
+- **Phase 3 实施上线（10-28 深夜）**：RhythmObserver（纯采集）+
+  StatsDraftAnalyzer（定量组合分析，**v1 正式机制**，§19 反驳修订版：
+  节律归纳属查表领地，agent 领地是泛化不是归纳；壳进程污染/公式校准
+  两缺口待数据）+ StartupSkill（S1-S7/SN 全规则，建议档起步）+
+  LaunchExecutor（白名单：App Paths→开始菜单 target→PATH；防重复；
+  undo=关自拉实例）+ knowbot:action 协议回传。组合草稿需 5 个解锁样本 +
+  面板确认才到建议档；自动拉起需 explicit + missed_need≥3
 - 下一步：真执行期的 A 归因积累 → FA 仪表读数 → 节律草稿生长（约一周）
   → 用户面板确认组合 → 建议档首秀
 - 详见 docs/phase-progress.md（进度）与 docs/design-amendments.md（与方案v0.1的偏差）
