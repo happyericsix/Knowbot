@@ -96,6 +96,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if self.path == "/api/overview":
                 return self._overview()
+            if self.path == "/api/proposals":
+                return self._proposals()
             if self.path.startswith("/api/preferences"):
                 return self._preferences()
             if self.path.startswith("/api/actions"):
@@ -119,6 +121,12 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._pause(self._body())
             if self.path == "/api/calibrate":
                 return self._calibrate(self._body())
+            if self.path.startswith("/api/proposal/") and self.path.endswith("/accept"):
+                return self._proposal_decide(self._id_from_path("/accept"), True)
+            if self.path.startswith("/api/proposal/") and self.path.endswith("/reject"):
+                return self._proposal_decide(self._id_from_path("/reject"), False)
+            if self.path.startswith("/api/action/") and self.path.endswith("/skip"):
+                return self._action_skip(self._id_from_path("/skip"))
             self._json({"error": "not found"}, 404)
         except sqlite3.OperationalError as e:
             self._json({"error": f"数据库忙: {e!r}"}, 503)
@@ -183,6 +191,12 @@ class _Handler(BaseHTTPRequestHandler):
             rows = [dict(r) for r in c.execute(
                 "SELECT id, ts_wall, sensor, type, payload FROM event_raw"
                 " ORDER BY id DESC LIMIT ?", (limit,))]
+        self._json({"items": rows})
+
+    def _proposals(self):
+        with _connect(self.panel.db_path, readonly=True) as c:
+            rows = [dict(r) for r in c.execute(
+                "SELECT * FROM proposal ORDER BY status='pending' DESC, id DESC")]
         self._json({"items": rows})
 
     # ---------- POST 实现 ----------
@@ -259,6 +273,32 @@ class _Handler(BaseHTTPRequestHandler):
         except sqlite3.OperationalError as e:
             return self._json({"ok": False, "error": f"数据库忙: {e!r}"}, 503)
         self._json(result, 200 if result.get("ok") else 409)
+
+    def _proposal_decide(self, proposal_id: int, accept: bool):
+        """泛化提案裁决：接受=类信念升格；拒绝=例外表永久抑制。"""
+        from ..learning.generalize import apply_proposal
+        from ..store.memory import MemoryStore
+
+        try:
+            with _connect(self.panel.db_path, readonly=False) as c:
+                result = apply_proposal(MemoryStore(c), proposal_id, accept,
+                                        via="panel")
+        except sqlite3.OperationalError as e:
+            return self._json({"ok": False, "error": f"数据库忙: {e!r}"}, 503)
+        self._json(result, 200 if result.get("ok") else 409)
+
+    def _action_skip(self, action_id: int):
+        """影子期遗留台账的人工收尾：记 ignore（不进四象限，退出待裁决）。"""
+        with _connect(self.panel.db_path, readonly=False) as c:
+            row = c.execute("SELECT id FROM action_log WHERE id=? AND reaction"
+                            " IS NULL", (action_id,)).fetchone()
+            if not row:
+                return self._json({"ok": False, "error": "不存在或已裁决"}, 404)
+            c.execute("UPDATE action_log SET reaction='ignore',"
+                      " reaction_detail=?, resolved_at=? WHERE id=?",
+                      (json.dumps({"via": "manual_skip"}, ensure_ascii=False),
+                       now_iso(), action_id))
+        self._json({"ok": True})
 
 
 def _parse_wall(ts: str) -> datetime.datetime | None:

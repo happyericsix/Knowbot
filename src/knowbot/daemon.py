@@ -96,6 +96,7 @@ async def run(config: Config, duration: float = 0.0) -> dict:
     prearm_ledger = None
     rhythm = None
     startup_skill = None
+    generalizer = None
     if config.enable_volume_skill or config.enable_panel:
         from .attribution.volume import VolumeAttributionParams
         from .executors.volume import VolumeExecutor
@@ -140,6 +141,13 @@ async def run(config: Config, duration: float = 0.0) -> dict:
                     suggest_delay_s=config.startup_suggest_delay_s,
                     silence_ratio=config.startup_silence_ratio))
             startup_skill.start(loop)
+
+        if config.enable_generalizer:
+            # Phase 4：L1 泛化提案（确定性机械；提案进待确认区，用户裁决）
+            from .learning.generalize import Generalizer
+            generalizer = Generalizer(memory,
+                                      interval_s=config.generalizer_interval_s)
+            generalizer.start(loop)
 
     if config.enable_volume_skill:
         from .learning.learner import VolumeLearner
@@ -221,6 +229,8 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         startup_skill.stop()
     if rhythm is not None:
         rhythm.stop()
+    if generalizer is not None:
+        generalizer.stop()
     if prearm_ledger is not None:
         prearm_ledger.stop()
     if panel is not None:

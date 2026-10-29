@@ -21,6 +21,15 @@ log = logging.getLogger(__name__)
 
 PREF_KEY = "startup.launch_set"
 
+# 壳进程过滤（§19.3 缺口一，2026-10-29 真实语料列证：解锁窗口混入系统
+# 前台抖动）。这些 exe 的前台切换是 shell 重绘/系统托盘行为，非用户意图。
+SHELL_NOISE = {
+    "explorer.exe", "shellhost.exe", "shellexperiencehost.exe",
+    "searchhost.exe", "startmenuexperiencehost.exe", "textinputhost.exe",
+    "lockapp.exe", "applicationframehost.exe", "pdfpreview.exe",
+    "runtimebroker.exe", "sihost.exe", "ctfmon.exe",
+}
+
 
 def schedule_bucket(ts_wall: str) -> str:
     """工作日/周末分桶（纯函数：周一~五 weekday，六日 weekend）。"""
@@ -42,11 +51,13 @@ class RhythmObserver:
 
     def __init__(self, bus: EventBus, memory: MemoryStore,
                  window_s: float = 900.0, analyzer=None,
+                 extra_noise: set[str] | None = None,
                  poll_s: float = 1.0) -> None:
         self._bus = bus
         self._m = memory
         self._window_s = window_s
         self._analyzer = analyzer
+        self._noise = SHELL_NOISE | (extra_noise or set())
         self._poll_s = poll_s
         self._win: dict | None = None
         self._task: asyncio.Task | None = None
@@ -73,7 +84,8 @@ class RhythmObserver:
         if ev.type != "changed" or self._win is None:
             return
         exe = ev.payload.get("exe")
-        if exe:  # 只记 exe 名（纯标识，红线）；快照缺失的跳过
+        # 只记 exe 名（纯标识，红线）；壳进程抖动非用户意图，过滤（§19.3）
+        if exe and exe.lower() not in self._noise:
             self._win["exes"].add(exe)
 
     async def _run(self) -> None:

@@ -131,8 +131,31 @@ function calibrateButtons(body) {
 
 async function renderPrefs() {
   const d = await api('/api/preferences');
-  $('#subtitle').textContent = `共 ${d.items.length} 条 · 待确认（草稿）排前面`;
+  const pr = await api('/api/proposals');
+  const pending = (pr.items || []).filter(p => p.status === 'pending');
+  $('#subtitle').textContent = `共 ${d.items.length} 条 · 待确认（草稿）排前面`
+    + (pending.length ? ` · 泛化提案 ${pending.length} 条待裁决` : '');
   const v = $('#view'); v.innerHTML = '';
+
+  if (pending.length) {
+    const wrap = el('div','card'); wrap.style.marginBottom = '12px';
+    wrap.append(el('h3', null, '泛化提案（推断待确认——explicit 压过一切推断）'));
+    for (const p of pending) {
+      const c = JSON.parse(p.content);
+      const row = el('div');
+      const desc = el('span', null,
+        `${c.scope_key} ← ${JSON.stringify(c.value)}（置信 ${p.confidence?.toFixed?.(2) ?? p.confidence}，` +
+        `${c.instances} 台实例一致）`);
+      desc.style.marginRight = '12px';
+      const ok = el('button','op','✓ 接受并升格');
+      ok.onclick = async () => { try { await api(`/api/proposal/${p.id}/accept`, {method:'POST'}); } catch(e){ alert(e.message); } refresh(); };
+      const no = el('button','op','✗ 拒绝并静默');
+      no.onclick = async () => { try { await api(`/api/proposal/${p.id}/reject`, {method:'POST'}); } catch(e){ alert(e.message); } refresh(); };
+      row.append(desc, ok, no); wrap.append(row);
+    }
+    v.append(wrap);
+  }
+
   const t = el('table');
   t.innerHTML = `<tr><th>状态</th><th>旋钮</th><th>作用域</th><th>值</th><th>置信</th><th>来源</th><th>证据</th><th>操作</th></tr>`;
   for (const p of d.items) {
@@ -179,6 +202,12 @@ async function renderActions() {
     }
     if (a.reaction == null && ['dry_run','notify','suggest','silent'].includes(a.exec_mode))
       ops.append(calibrateButtons({pref_id: a.pref_id, action_id: a.id}));  // 事后补一次三键裁决
+    if (a.reaction == null && ['dry_run','suggest'].includes(a.exec_mode)) {
+      const sk = el('button','op','跳过');
+      sk.title = '影子期遗留：记 ignore 收尾，不再计入待裁决';
+      sk.onclick = async () => { try { await api(`/api/action/${a.id}/skip`, {method:'POST'}); } catch(e){ alert(e.message); } refresh(); };
+      ops.append(sk);
+    }
     if (!ops.childNodes.length) ops.append(el('span','dim','—'));
     tr.append(ops); t.append(tr);
   }

@@ -70,6 +70,10 @@ class Config:
     startup_suggest_delay_s: float = 90.0  # 解锁后等 N 秒再开口（等你开首波）
     startup_silence_ratio: float = 0.6     # 手动开 ≥ 此比例 → 沉默记 missed_need
 
+    # Phase 4：泛化提案管道（L1 实例→类，docs/phase4-generalization.md）
+    enable_generalizer: bool = True
+    generalizer_interval_s: float = 3600.0  # 扫描周期（纯 SQL，计算礼貌）
+
     @classmethod
     def load(cls, path: str | None = None, overrides: dict | None = None) -> "Config":
         cfg = cls()
