@@ -91,8 +91,12 @@ tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
   LaunchExecutor（白名单：App Paths→开始菜单 target→PATH；防重复；
   undo=关自拉实例）+ knowbot:action 协议回传。组合草稿需 5 个解锁样本 +
   面板确认才到建议档；自动拉起需 explicit + missed_need≥3
-- 下一步：真执行期的 A 归因积累 → FA 仪表读数 → 节律草稿生长（约一周）
-  → 用户面板确认组合 → 建议档首秀
+- **Phase 4 泛化管道上线（10-29，§20）**：L1 实例→类（确定性机械，
+  ≥2 台 explicit 一致 → 提案进待确认区，折扣 ×0.85）；首条真实提案
+  已诞生（speakers ← 2×0.25）。面板提案区/台账跳过；壳进程过滤落地
+  （§19.3 缺口一）；影子期 17 条遗留收尾
+- 下一步：提案首裁（面板接受/拒绝）→ 节律草稿生长（2/5 窗口）→
+  音量技能 A 归因继续积累 → WiFi 传感器 → 研究层（Phase 5，等台账说话）
 - 详见 docs/phase-progress.md（进度）与 docs/design-amendments.md（与方案v0.1的偏差）
 
 ## 与本项目的 agent 对话时
