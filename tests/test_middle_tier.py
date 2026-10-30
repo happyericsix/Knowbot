@@ -202,6 +202,7 @@ def test_calendar_fresh_snapshot_ttl():
         snap3 = await sensor.fresh_snapshot(max_age_s=900.0)
         assert len(fetches) == 2                     # 过期：就地刷新
         assert snap3["today"] == []                  # 拿到的是新状态
+        await asyncio.sleep(0.05)                    # 让总线分发第二事件
         assert [e.payload["today"] for e in events] == [
             [["18:00", "19:00"]], []]                # 两次变化各发一条
         runner.cancel()
