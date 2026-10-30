@@ -94,12 +94,17 @@ def busy_snapshot(text: str, today: date) -> dict:
 
 
 class CalendarSensor(Sensor):
-    """周期拉取 ICS → 忙闲快照（内容变化才发布）。"""
+    """周期拉取 ICS → 忙闲快照（内容变化才发布）。
+
+    上下文时效保证（2026-10-30 架构分析）：忙闲是状态不是偏好——
+    周期刷新（默认 30 分钟）之外，`fresh_snapshot(max_age_s)` 供查询方
+    取数：缓存过期就先刷新再返回，绝不给陈旧的"今晚没安排"。
+    """
 
     name = "calendar.busy"
 
     def __init__(self, bus: EventBus, ics_url: str, authorized,
-                 refresh_hours: float = 12.0, fetch=None) -> None:
+                 refresh_hours: float = 0.5, fetch=None) -> None:
         self._bus = bus
         self._url = ics_url
         self._authorized = authorized
@@ -107,6 +112,7 @@ class CalendarSensor(Sensor):
         self._fetch = fetch or self._default_fetch
         self._task: asyncio.Task | None = None
         self._last_payload: dict | None = None
+        self._last_fetch_mono: float = 0.0
 
     def start(self, loop) -> None:
         self._task = loop.create_task(self._run(), name="sensor-calendar")
@@ -122,17 +128,35 @@ class CalendarSensor(Sensor):
         with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310
             return resp.read().decode("utf-8", errors="replace")
 
+    async def _refresh(self) -> dict | None:
+        """拉取→解析→变化才发布；更新新鲜度时间戳。"""
+        import time as _t
+        if not self._authorized():
+            return None
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(None, self._fetch, self._url)
+        self._last_fetch_mono = _t.monotonic()
+        snap = busy_snapshot(text, date.today())
+        if snap != self._last_payload:
+            self._last_payload = snap
+            self._bus.publish(Event(self.name, "busy", snap))
+        return snap
+
+    async def fresh_snapshot(self, max_age_s: float = 900.0) -> dict | None:
+        """带 TTL 的忙闲快照：缓存过期先刷新再返回（查询方入口）。"""
+        import time as _t
+        if (self._last_payload is None
+                or _t.monotonic() - self._last_fetch_mono > max_age_s):
+            try:
+                await self._refresh()
+            except Exception:
+                log.warning("按需刷新失败，返回现有缓存", exc_info=True)
+        return self._last_payload
+
     async def _run(self) -> None:
         while True:
             try:
-                if self._authorized():
-                    loop = asyncio.get_running_loop()
-                    text = await loop.run_in_executor(None, self._fetch,
-                                                      self._url)
-                    snap = busy_snapshot(text, date.today())
-                    if snap != self._last_payload:  # 快照变化才发
-                        self._last_payload = snap
-                        self._bus.publish(Event(self.name, "busy", snap))
+                await self._refresh()
             except asyncio.CancelledError:
                 raise
             except Exception:

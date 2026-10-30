@@ -169,3 +169,42 @@ def test_grant_revoke_and_burn(tmp_path):
     grant(memory, "app.web")                           # 重新授权可再采集
     assert is_authorized(memory, "app.web") is True
     store.close()
+
+
+def test_calendar_fresh_snapshot_ttl():
+    """上下文时效：fresh_snapshot 缓存期内不重复拉取，过期就地刷新。"""
+    from knowbot.sensors.calendar import CalendarSensor
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        bus = EventBus(); bus.bind(loop)
+        events = []
+        bus.subscribe("calendar.busy", events.append)
+        runner = asyncio.create_task(bus.run())
+        fetches = []
+        import datetime as _dt
+        d = _dt.date.today().strftime("%Y%m%d")     # 动态日期：忙闲按"今日"过滤
+        ics_iter = iter([
+            f"BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:{d}T180000\n"
+            f"DTEND:{d}T190000\nEND:VEVENT\nEND:VCALENDAR",
+            "BEGIN:VCALENDAR\nEND:VCALENDAR",   # 第二次拉取：今晚安排被取消
+        ])
+        def fake_fetch(url):
+            fetches.append(url)
+            return next(ics_iter)
+        sensor = CalendarSensor(bus, "https://x/ics", lambda: True,
+                                refresh_hours=999.0, fetch=fake_fetch)
+        snap1 = await sensor.fresh_snapshot(max_age_s=900.0)
+        assert snap1["today"] == [["18:00", "19:00"]] and len(fetches) == 1
+        snap2 = await sensor.fresh_snapshot(max_age_s=900.0)
+        assert len(fetches) == 1                     # TTL 内：用缓存不拉取
+        sensor._last_fetch_mono -= 1000.0            # 模拟缓存过期
+        snap3 = await sensor.fresh_snapshot(max_age_s=900.0)
+        assert len(fetches) == 2                     # 过期：就地刷新
+        assert snap3["today"] == []                  # 拿到的是新状态
+        assert [e.payload["today"] for e in events] == [
+            [["18:00", "19:00"]], []]                # 两次变化各发一条
+        runner.cancel()
+        await asyncio.gather(runner, return_exceptions=True)
+
+    asyncio.run(main())

@@ -79,7 +79,9 @@ class Config:
     enable_webhost: bool = True
     webhost_browsers: list = None  # type: ignore[assignment]
     calendar_ics_url: str = ""     # 提供 URL 即授权；留空 = 不启用
-    calendar_refresh_hours: float = 12.0
+    # 上下文类数据高时效（2026-10-30 架构分析）：忙闲是状态不是偏好，
+    # 默认 30 分钟刷新；查询侧另有 TTL 保证（CalendarSensor.fresh_snapshot）
+    calendar_refresh_hours: float = 0.5
 
     def __post_init__(self) -> None:
         if self.webhost_browsers is None:
