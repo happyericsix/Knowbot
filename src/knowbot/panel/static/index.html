@@ -48,6 +48,7 @@
   <button data-tab="prefs">偏好库 / 待确认</button>
   <button data-tab="actions">动作台账</button>
   <button data-tab="events">事件流</button>
+  <button data-tab="settings">设置</button>
   <button id="pause">⏸ 暂停</button>
 </nav>
 <div id="view"></div>
@@ -71,8 +72,39 @@ async function refresh() {
     if (tab === 'overview') await renderOverview();
     else if (tab === 'prefs') await renderPrefs();
     else if (tab === 'actions') await renderActions();
+    else if (tab === 'settings') await renderSettings();
     else await renderEvents();
   } catch (e) { $('#subtitle').textContent = '刷新失败: ' + e.message; }
+}
+
+async function renderSettings() {
+  const d = await api('/api/auth');
+  $('#subtitle').textContent = '中间地带传感器授权（未授权 = 不采集；撤销即焚：停采并删除其全部历史）';
+  const v = $('#view'); v.innerHTML = '';
+  for (const s of d.items) {
+    const card = el('div','card'); card.style.marginBottom = '10px';
+    const head = el('div');
+    const dot = el('span', 'tag ' + (s.granted ? 'active' : 'draft'),
+                   s.granted ? '已授权' : '未授权');
+    head.append(el('b', null, s.name), dot);
+    if (s.granted_at) head.append(el('span','dim',' ' + s.granted_at.slice(0,16)));
+    card.append(head, el('div','dim', s.desc));
+    const ops = el('div'); ops.style.marginTop = '8px';
+    if (!s.granted) {
+      const g = el('button','op','授权采集');
+      g.onclick = async () => { try { await api(`/api/auth/${s.sensor}/grant`, {method:'POST'}); } catch(e){ alert(e.message); } refresh(); };
+      ops.append(g);
+    } else {
+      const r = el('button','op','撤销并焚毁历史');
+      r.onclick = async () => {
+        if (!confirm(`确定撤销「${s.name}」？将停止采集并删除其全部历史事件，不可恢复。`)) return;
+        try { const res = await api(`/api/auth/${s.sensor}/revoke`, {method:'POST'}); alert(`已焚毁 ${res.purged_events} 条历史事件`); } catch(e){ alert(e.message); }
+        refresh();
+      };
+      ops.append(r);
+    }
+    card.append(ops); v.append(card);
+  }
 }
 
 async function renderOverview() {

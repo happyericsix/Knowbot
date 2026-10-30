@@ -61,3 +61,11 @@ startup_min_samples = 5         # 最少解锁样本才生成组合草稿（宁�
 startup_member_rate_floor = 0.4 # 成员出现率淘汰线（衰减淘汰）
 startup_suggest_delay_s = 90.0  # 解锁后等 N 秒再开口（等你开首波程序）
 startup_silence_ratio = 0.6     # 手动开 ≥ 此比例 → 沉默记 missed_need（不弹）
+
+# 中间地带传感器（修订 §21：逐传感器授权制，docs/authorized-sensors.md）
+# 采集授权在面板"设置"区开关（未授权=不采集；撤销即焚）。这里只决定是否装载。
+enable_webhost = true
+webhost_browsers = ["msedge.exe", "chrome.exe"]   # Firefox 地址栏非标准 Edit，暂不支持
+# 日历忙闲：填入 ICS 订阅 URL 即视为授权（留空不启用）
+calendar_ics_url = ""
+calendar_refresh_hours = 12.0

@@ -98,6 +98,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._overview()
             if self.path == "/api/proposals":
                 return self._proposals()
+            if self.path == "/api/auth":
+                return self._auth_list()
             if self.path.startswith("/api/preferences"):
                 return self._preferences()
             if self.path.startswith("/api/actions"):
@@ -125,6 +127,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._proposal_decide(self._id_from_path("/accept"), True)
             if self.path.startswith("/api/proposal/") and self.path.endswith("/reject"):
                 return self._proposal_decide(self._id_from_path("/reject"), False)
+            if self.path.startswith("/api/auth/") and self.path.endswith("/grant"):
+                return self._auth_set(self.path.split("/")[3], True)
+            if self.path.startswith("/api/auth/") and self.path.endswith("/revoke"):
+                return self._auth_set(self.path.split("/")[3], False)
             if self.path.startswith("/api/action/") and self.path.endswith("/skip"):
                 return self._action_skip(self._id_from_path("/skip"))
             self._json({"error": "not found"}, 404)
@@ -299,6 +305,49 @@ class _Handler(BaseHTTPRequestHandler):
                       (json.dumps({"via": "manual_skip"}, ensure_ascii=False),
                        now_iso(), action_id))
         self._json({"ok": True})
+
+    # ---------- 中间地带授权（§21）----------
+
+    def _auth_list(self):
+        from ..sensors.auth import MIDDLE_TIER
+        from ..store.memory import MemoryStore
+
+        with _connect(self.panel.db_path, readonly=True) as c:
+            m = MemoryStore(c)
+            items = []
+            for key, meta in MIDDLE_TIER.items():
+                items.append({
+                    "sensor": key, **meta,
+                    "granted": m.get_meta(f"auth.{key}") != "",
+                    "granted_at": m.get_meta(f"auth.{key}") or None,
+                })
+        self._json({"items": items})
+
+    def _auth_set(self, sensor_name: str, grant_on: bool):
+        """授权/撤销即焚。治理事件落 event_raw 留痕（seq 取库内最大+1）。"""
+        from ..sensors import auth as auth_mod
+        from ..store.memory import MemoryStore, now_iso
+
+        if sensor_name not in auth_mod.MIDDLE_TIER:
+            return self._json({"ok": False, "error": "未知传感器"}, 400)
+        with _connect(self.panel.db_path, readonly=False) as c:
+            m = MemoryStore(c)
+            if grant_on:
+                auth_mod.grant(m, sensor_name)
+                detail = {"op": "granted"}
+            else:
+                detail = {"op": "revoked",
+                          "purged_events": auth_mod.revoke(m, sensor_name)}
+            seq = c.execute(
+                "SELECT COALESCE(MAX(seq),0)+1 FROM event_raw").fetchone()[0]
+            import time as _t
+            c.execute(
+                "INSERT INTO event_raw (seq, ts_mono, ts_wall, sensor, type,"
+                " payload) VALUES (?,?,?,?,?,?)",
+                (seq, _t.monotonic(), now_iso(), "system.auth",
+                 "granted" if grant_on else "revoked",
+                 json.dumps(detail, ensure_ascii=False)))
+        self._json({"ok": True, **detail})
 
 
 def _parse_wall(ts: str) -> datetime.datetime | None:

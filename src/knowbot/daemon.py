@@ -149,6 +149,28 @@ async def run(config: Config, duration: float = 0.0) -> dict:
                                       interval_s=config.generalizer_interval_s)
             generalizer.start(loop)
 
+        # 中间地带（§21）：未授权 = 不采集（探针注入，无追溯）
+        from .sensors.auth import is_authorized
+        if config.enable_webhost:
+            from .sensors.webhost import WebHostSensor
+            webhost = WebHostSensor(
+                bus, browsers=set(config.webhost_browsers),
+                authorized=lambda: is_authorized(memory, "app.web"))
+            webhost.start(loop)
+            sensors.append(webhost)
+        if config.calendar_ics_url:
+            # 提供 ICS URL 即授权（曾被面板撤销则尊重撤销标记）
+            if memory.get_meta("auth.revoked.calendar.busy") != "1":
+                from .sensors.auth import grant
+                grant(memory, "calendar.busy")
+            from .sensors.calendar import CalendarSensor
+            calendar = CalendarSensor(
+                bus, ics_url=config.calendar_ics_url,
+                authorized=lambda: is_authorized(memory, "calendar.busy"),
+                refresh_hours=config.calendar_refresh_hours)
+            calendar.start(loop)
+            sensors.append(calendar)
+
     if config.enable_volume_skill:
         from .learning.learner import VolumeLearner
         from .skills.volume import VolumeSkill

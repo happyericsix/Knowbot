@@ -74,6 +74,17 @@ class Config:
     enable_generalizer: bool = True
     generalizer_interval_s: float = 3600.0  # 扫描周期（纯 SQL，计算礼貌）
 
+    # 中间地带传感器（修订 §21：逐传感器授权制，docs/authorized-sensors.md）
+    # 未授权（面板未开）= 不启动采集；授权在面板"设置"区
+    enable_webhost: bool = True
+    webhost_browsers: list = None  # type: ignore[assignment]
+    calendar_ics_url: str = ""     # 提供 URL 即授权；留空 = 不启用
+    calendar_refresh_hours: float = 12.0
+
+    def __post_init__(self) -> None:
+        if self.webhost_browsers is None:
+            self.webhost_browsers = ["msedge.exe", "chrome.exe", "firefox.exe"]
+
     @classmethod
     def load(cls, path: str | None = None, overrides: dict | None = None) -> "Config":
         cfg = cls()
