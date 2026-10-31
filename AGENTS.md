@@ -99,6 +99,9 @@ tests/               85 个测试（黄金用例+真实语料回归 fixtures/）
   地址栏→内存截断 host；真机冒烟修复"任意 Edit 兜底读网页输入框"隐私级
   缺陷）+ 日历忙闲（ICS URL 即授权）+ 面板设置区（授权/撤销即焚/治理
   留痕）。默认全部未授权，为 Phase 5 备料
+- **环境分级（10-30）**：rehearsal_mode 演练总开关（执行器全 Fake，
+  事件照采/台账照记，零副作用试验新功能）+ GitHub Actions CI
+  （windows-latest 自动跑测试）
 - 下一步：提案首裁（面板接受/拒绝）→ 节律草稿生长（2/5 窗口）→
   音量技能 A 归因继续积累 → WiFi 传感器 → 研究层（Phase 5，等台账说话）
 - 详见 docs/phase-progress.md（进度）与 docs/design-amendments.md（与方案v0.1的偏差）
