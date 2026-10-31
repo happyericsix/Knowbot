@@ -69,3 +69,7 @@ webhost_browsers = ["msedge.exe", "chrome.exe"]   # Firefox 地址栏非标准 E
 # 日历忙闲：填入 ICS 订阅 URL 即视为授权（留空不启用）
 calendar_ics_url = ""
 calendar_refresh_hours = 0.5  # 30 分钟；忙闲是状态不是偏好，保持新鲜
+
+# 演练模式：零副作用试验环境（事件照采/技能照决策/台账照记，执行器全 Fake，
+# 音量不真调、prearm 不装配、进程不真拉、注册表零写入）。试验新功能先开这个。
+rehearsal_mode = false

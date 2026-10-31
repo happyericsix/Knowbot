@@ -126,6 +126,23 @@ def terminate_pid(pid: int) -> bool:
         _kernel32.CloseHandle(h)
 
 
+class FakeLaunchExecutor:
+    """演练模式（rehearsal_mode）专用：记录意图、零系统副作用。"""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def launch(self, exes: list[str]) -> dict:
+        self.calls.append(list(exes))
+        return {"launched": [{"exe": e, "pid": -1} for e in exes],
+                "skipped_running": [], "unresolved": [],
+                "rehearsal": True}
+
+    @staticmethod
+    def undo(launched: list[dict]) -> int:
+        return 0  # 无真实进程，无事可撤
+
+
 class LaunchExecutor:
     """技能侧适配器：launch(exes) → 结果字典（launched 携带 pid 供 undo）。"""
 

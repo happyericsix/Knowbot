@@ -125,14 +125,20 @@ def _cmd_action(args) -> None:
         print(f"非法动作 URI: {args.uri}", file=sys.stderr)
         raise SystemExit(2)
     db = args.db or Config.load(args.config).db_path
+    rehearsal = Config.load(args.config).rehearsal_mode
     result = {"ok": False, "error": "unreachable"}
     try:
         conn = sqlite3.connect(db, timeout=5)
         conn.row_factory = sqlite3.Row
         try:
-            from .executors.launch import LaunchExecutor
+            if rehearsal:  # 演练模式：回传按钮也零副作用
+                from .executors.launch import FakeLaunchExecutor
+                launcher = FakeLaunchExecutor()
+            else:
+                from .executors.launch import LaunchExecutor
+                launcher = LaunchExecutor()
             result = apply_startup_action(
-                MemoryStore(conn), LaunchExecutor(), params["op"],
+                MemoryStore(conn), launcher, params["op"],
                 params["pref"], params["action"], via="toast")
         finally:
             conn.close()

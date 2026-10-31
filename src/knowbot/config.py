@@ -62,6 +62,11 @@ class Config:
     panel_port: int = 7681
     enable_toast: bool = True
 
+    # 演练模式（rehearsal）：零副作用试验环境——事件照采、技能照决策、
+    # 台账照记，但所有执行器为 Fake（音量不真调/prearm 不真写/进程不真拉/
+    # 注册表不真写）。试验新功能的正确姿势（2026-10-30 环境分级裁决）。
+    rehearsal_mode: bool = False
+
     # Phase 3：启动技能（解锁后开工组合，docs/phase3-startup-skill.md）
     enable_startup: bool = True
     startup_window_s: float = 900.0        # 节律观察窗（解锁后 N 秒内的启动集合）

@@ -209,3 +209,20 @@ def test_calendar_fresh_snapshot_ttl():
         await asyncio.gather(runner, return_exceptions=True)
 
     asyncio.run(main())
+
+
+# ---------- 演练模式（rehearsal_mode，2026-10-30 环境分级） ----------
+
+def test_fake_launch_executor_zero_side_effects():
+    from knowbot.executors.launch import FakeLaunchExecutor
+    ex = FakeLaunchExecutor()
+    r = ex.launch(["A.exe", "B.exe"])
+    assert r["rehearsal"] is True
+    assert [i["pid"] for i in r["launched"]] == [-1, -1]  # 无真实 pid
+    assert ex.calls == [["A.exe", "B.exe"]]
+    assert ex.undo(r["launched"]) == 0                     # 无事可撤
+
+
+def test_rehearsal_config_default_off():
+    from knowbot.config import Config
+    assert Config().rehearsal_mode is False

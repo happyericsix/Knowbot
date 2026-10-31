@@ -70,7 +70,7 @@ async def run(config: Config, duration: float = 0.0) -> dict:
             bus,
             watch_volume=config.enable_volume_watch,
             vol_settle_s=config.vol_settle_s,
-            enable_prearm=config.enable_prearm,
+            enable_prearm=config.enable_prearm and not config.rehearsal_mode,
             prearm_safe_scalar=config.prearm_safe_scalar,
             prearm_only_lower=config.prearm_only_lower,
             prearm_cooldown_s=config.prearm_cooldown_s,
@@ -109,19 +109,25 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         notifier = None
         if config.enable_toast:
             from .notify.toast import ensure_appid, toast as _toast
-            ensure_appid()  # 未注册 AUMID 的 toast 静默不显示（真机实测坑）
+            if not config.rehearsal_mode:  # 演练模式：注册表零写入
+                ensure_appid()  # 未注册 AUMID 的 toast 静默不显示（真机实测坑）
             notifier = _toast
-            try:  # toast 按钮的回传通道；失败仅降级为无按钮 toast
-                from .notify.protocol import ensure_protocol_handler
-                ensure_protocol_handler(config.db_path)
-            except Exception:
-                log.warning("knowbot: 协议注册失败（按钮回传不可用）", exc_info=True)
+            if not config.rehearsal_mode:
+                try:  # toast 按钮的回传通道；失败仅降级为无按钮 toast
+                    from .notify.protocol import ensure_protocol_handler
+                    ensure_protocol_handler(config.db_path)
+                except Exception:
+                    log.warning("knowbot: 协议注册失败（按钮回传不可用）",
+                                exc_info=True)
 
-        if config.enable_prearm:
-            # 反射层动作的台账落账（哲学 7：台账不可豁免）
+        if config.enable_prearm and not config.rehearsal_mode:
+            # 反射层动作的台账落账（哲学 7：台账不可豁免）。
+            # 演练模式下 prearm 直接不装配（无真实写，也不虚构台账）
             from .skills.prearm import PrearmLedger
             prearm_ledger = PrearmLedger(bus, memory)
             prearm_ledger.start(loop)
+        elif config.enable_prearm and config.rehearsal_mode:
+            log.info("演练模式：pre-arm 未装配（零副作用）")
 
         if config.enable_startup:
             # Phase 3：节律观察层（纯采集）+ 定量组合分析（v1 正式机制，
@@ -134,9 +140,12 @@ async def run(config: Config, duration: float = 0.0) -> dict:
                     memory, min_samples=config.startup_min_samples,
                     rate_floor=config.startup_member_rate_floor))
             rhythm.start(loop)
-            from .executors.launch import LaunchExecutor
+            from .executors.launch import FakeLaunchExecutor, LaunchExecutor
             startup_skill = StartupSkill(
-                bus, memory, LaunchExecutor(), notifier=notifier,
+                bus, memory,
+                FakeLaunchExecutor() if config.rehearsal_mode
+                else LaunchExecutor(),
+                notifier=notifier,
                 params=StartupParams(
                     suggest_delay_s=config.startup_suggest_delay_s,
                     silence_ratio=config.startup_silence_ratio))
@@ -183,7 +192,8 @@ async def run(config: Config, duration: float = 0.0) -> dict:
 
         skill = VolumeSkill(
             bus, memory, VolumeLearner(memory), volume_executor,
-            VolumeAttributionParams(), dry_run=config.volume_skill_dry_run,
+            VolumeAttributionParams(),
+            dry_run=config.volume_skill_dry_run or config.rehearsal_mode,
             notifier=notifier, meter_factory=_meter_factory,
             toast_cooldown_s=config.shadow_toast_cooldown_s,
             toast_daily=config.shadow_toast_daily)
@@ -193,7 +203,9 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         from .panel.server import PanelServer
         panel = PanelServer(
             config.db_path, executor=volume_executor, port=config.panel_port,
-            flags={"dry_run": config.volume_skill_dry_run})
+            flags={"dry_run": (config.volume_skill_dry_run
+                               or config.rehearsal_mode),
+                   "rehearsal": config.rehearsal_mode})
         panel.start()
 
     store.set_meta("last_start", now_wall())
@@ -205,7 +217,9 @@ async def run(config: Config, duration: float = 0.0) -> dict:
         "sensors": [s.name for s in sensors],
         "aggregation": config.enable_aggregation,
         "volume_skill": config.enable_volume_skill,
-        "volume_skill_dry_run": config.volume_skill_dry_run,
+        "volume_skill_dry_run": (config.volume_skill_dry_run
+                                 or config.rehearsal_mode),
+        "rehearsal_mode": config.rehearsal_mode,
         "db_path": str(config.db_path),
     }))
 
