@@ -65,7 +65,39 @@ class RhythmObserver:
     def start(self, loop) -> None:
         self._bus.subscribe("system.session", self._on_session)
         self._bus.subscribe("app.foreground", self._on_fg)
+        self._backfill_window()
         self._task = loop.create_task(self._run(), name="rhythm-observer")
+
+    def _backfill_window(self) -> None:
+        """重启续窗：从录像带回填未完成的观察窗（2026-10-31 实证：daemon
+        重启杀掉内存窗口丢样本）。解锁与期间的前台切换都在 event_raw 里。"""
+        try:
+            row = self._m.conn.execute(
+                "SELECT ts_mono, ts_wall FROM event_raw"
+                " WHERE sensor='system.session' AND type='session_unlock'"
+                " ORDER BY id DESC LIMIT 1").fetchone()
+            if row is None:
+                return
+            age = time.monotonic() - row["ts_mono"]
+            if not (0 <= age < self._window_s):
+                return  # 无在途窗口，或跨重启 mono 回绕（安全放弃）
+            exes = set()
+            for fg in self._m.conn.execute(
+                    "SELECT payload FROM event_raw"
+                    " WHERE sensor='app.foreground' AND type='changed'"
+                    " AND ts_mono >= ? ORDER BY id", (row["ts_mono"],)):
+                try:
+                    exe = json.loads(fg["payload"]).get("exe")
+                except (ValueError, TypeError):
+                    continue
+                if exe and exe.lower() not in self._noise:
+                    exes.add(exe)
+            self._win = {"start": row["ts_mono"], "wall": row["ts_wall"],
+                         "exes": exes}
+            log.info("节律观察：回填在途窗口（%s 解锁，已见 %d 程序）",
+                     row["ts_wall"][11:16], len(exes))
+        except Exception:
+            log.exception("节律窗口回填失败")
 
     def stop(self) -> None:
         if self._task is not None:
@@ -173,6 +205,8 @@ class StatsDraftAnalyzer:
                 d = json.loads(r["detail"] or "{}")
             except (ValueError, TypeError):
                 continue
-            if d.get("bucket") == bucket and d.get("window_exes") is not None:
+            if d.get("bucket") == bucket and d.get("window_exes"):
+                # 空窗（解锁没开工）照记证据但不参与组合统计——它稀释
+                # 所有成员出现率，不是真实的工作日样本（2026-10-29 实证）
                 out.append(set(d["window_exes"]))
         return out

@@ -133,3 +133,99 @@ def test_placeholder_below_min_samples_keeps_shell_empty(tmp_path):
         store.close()
 
     asyncio.run(main())
+
+
+# ---------- 采集质量三修（2026-10-30~11-03 真实语料列证） ----------
+
+def test_extra_noise_filters_vendor_tray(tmp_path):
+    """厂商开机自启托盘（Le*/XRite）不进窗口（extra_noise 注入）。"""
+    async def main():
+        store, memory = _setup(tmp_path)
+        loop = asyncio.get_running_loop()
+        bus = EventBus(); bus.bind(loop)
+        bus.subscribe("", store.append)
+        flusher = asyncio.create_task(store.run())
+        obs = RhythmObserver(bus, memory, window_s=0.15, poll_s=0.02,
+                             extra_noise={"leaswptip.exe", "xritecolorassistant.exe"})
+        obs.start(loop)
+        await _run_observer(bus, obs, [_unlock(),
+                                       _fg("ZCode.exe"), _fg("LeASWpTip.exe"),
+                                       _fg("XRiteColorAssistant.exe")])
+        flusher.cancel()
+        await asyncio.gather(flusher, return_exceptions=True)
+        bucket = schedule_bucket("2026-10-29T09:00:00+08:00")
+        pref = memory.get(PREF_KEY, "class", bucket)
+        ev = memory.conn.execute(
+            "SELECT detail FROM evidence WHERE pref_id=?", (pref["id"],)).fetchone()
+        assert json.loads(ev["detail"])["window_exes"] == ["ZCode.exe"]
+        store.close()
+    asyncio.run(main())
+
+
+def test_empty_windows_excluded_from_stats(tmp_path):
+    """空窗（解锁没开工）照记证据，但不参与组合统计。"""
+    async def main():
+        store, memory = _setup(tmp_path)
+        loop = asyncio.get_running_loop()
+        bus = EventBus(); bus.bind(loop)
+        bus.subscribe("", store.append)
+        flusher = asyncio.create_task(store.run())
+        obs = RhythmObserver(
+            bus, memory, window_s=0.15, poll_s=0.02,
+            analyzer=StatsDraftAnalyzer(memory, min_samples=3, rate_floor=0.5))
+        obs.start(loop)
+        for exes in (["A.exe"], [], ["A.exe"], [], ["A.exe"]):  # 3 实窗 + 2 空窗
+            await _run_observer(bus, obs, [_unlock()] + [_fg(e) for e in exes],
+                                settle=0.25)
+            obs.start(loop)
+        flusher.cancel()
+        await asyncio.gather(flusher, return_exceptions=True)
+        bucket = schedule_bucket("2026-10-29T09:00:00+08:00")
+        pref = memory.get(PREF_KEY, "class", bucket)
+        apps = {a["exe"]: a["rate"] for a in json.loads(pref["value"])["apps"]}
+        assert apps == {"A.exe": 1.0}   # 3/3（空窗不计分母），非 3/5
+        store.close()
+    asyncio.run(main())
+
+
+def test_backfill_resumes_inflight_window_after_restart(tmp_path):
+    """重启续窗：新观察者从 event_raw 回填未完成窗口（含期间前台集合）。"""
+    async def main():
+        import time as _t
+        store, memory = _setup(tmp_path)
+        loop = asyncio.get_running_loop()
+        bus = EventBus(); bus.bind(loop)
+        bus.subscribe("", store.append)
+        flusher = asyncio.create_task(store.run())
+        # 模拟"旧 daemon"：60 秒前解锁 + 期间切过前台，然后它死了
+        t_unlock = _t.monotonic() - 60.0
+        store.append(Event("system.session", "session_unlock", {},
+                           ts_mono=t_unlock,
+                           ts_wall="2026-10-29T09:00:00+08:00"))
+        store.append(Event("app.foreground", "changed", {"exe": "ZCode.exe"},
+                           ts_mono=t_unlock + 5))
+        store.append(Event("app.foreground", "changed",
+                           {"exe": "ShellHost.exe"}, ts_mono=t_unlock + 6))
+        store._flush()
+        await asyncio.sleep(0.1)
+        # 新 daemon 的观察者（窗口 900s，解锁在 60s 前 → 在途）：
+        # start() 即回填，窗口里已有 ZCode（壳进程被滤）
+        obs = RhythmObserver(bus, memory, window_s=900.0, poll_s=0.05,
+                             analyzer=None)
+        obs.start(loop)
+        assert obs._win is not None
+        assert obs._win["exes"] == {"ZCode.exe"}
+        # 等窗口定案（900s 太长——直接手工触发收尾路径的判定条件模拟）
+        obs._win["start"] = _t.monotonic() - 901.0  # 人为到期
+        await asyncio.sleep(0.2)
+        obs.stop()
+        flusher.cancel()
+        await asyncio.gather(flusher, return_exceptions=True)
+        bucket = schedule_bucket("2026-10-29T09:00:00+08:00")
+        pref = memory.get(PREF_KEY, "class", bucket)
+        ev = memory.conn.execute(
+            "SELECT detail FROM evidence WHERE pref_id=?", (pref["id"],)).fetchone()
+        d = json.loads(ev["detail"])
+        assert d["window_exes"] == ["ZCode.exe"] and d["hhmm"] == "09:00"
+        store.close()
+    asyncio.run(main())

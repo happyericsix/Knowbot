@@ -138,7 +138,8 @@ async def run(config: Config, duration: float = 0.0) -> dict:
                 bus, memory, window_s=config.startup_window_s,
                 analyzer=StatsDraftAnalyzer(
                     memory, min_samples=config.startup_min_samples,
-                    rate_floor=config.startup_member_rate_floor))
+                    rate_floor=config.startup_member_rate_floor),
+                extra_noise=set(config.startup_extra_noise))
             rhythm.start(loop)
             from .executors.launch import FakeLaunchExecutor, LaunchExecutor
             startup_skill = StartupSkill(

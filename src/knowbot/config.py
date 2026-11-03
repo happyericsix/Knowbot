@@ -74,6 +74,9 @@ class Config:
     startup_member_rate_floor: float = 0.4 # 成员出现率淘汰线（衰减淘汰）
     startup_suggest_delay_s: float = 90.0  # 解锁后等 N 秒再开口（等你开首波）
     startup_silence_ratio: float = 0.6     # 手动开 ≥ 此比例 → 沉默记 missed_need
+    # 节律窗口额外噪声（厂商开机自启托盘等；系统壳进程已内置过滤）
+    # 2026-10-30~11-03 真实语料列证：联想/X-Rite 托盘混入窗口
+    startup_extra_noise: list = None  # type: ignore[assignment]
 
     # Phase 4：泛化提案管道（L1 实例→类，docs/phase4-generalization.md）
     enable_generalizer: bool = True
@@ -91,6 +94,11 @@ class Config:
     def __post_init__(self) -> None:
         if self.webhost_browsers is None:
             self.webhost_browsers = ["msedge.exe", "chrome.exe", "firefox.exe"]
+        if self.startup_extra_noise is None:
+            self.startup_extra_noise = [
+                "leaswptip.exe", "lefile.exe", "lsf.exe",
+                "xritecolorassistant.exe", "gameviewer.exe",
+            ]
 
     @classmethod
     def load(cls, path: str | None = None, overrides: dict | None = None) -> "Config":
